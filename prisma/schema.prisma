@@ -1,0 +1,102 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Landlord {
+  id           Int        @id @default(autoincrement())
+  fullName     String     @map("full_name")
+  phoneNumber  String     @unique @map("phone_number")
+  email        String?
+  passwordHash String     @map("password_hash")
+  properties   Property[]
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  @@map("landlords")
+}
+
+model Property {
+  id              Int      @id @default(autoincrement())
+  name            String
+  location        String?
+  waterPrice      Float?   @map("water_price")
+  electricityPrice Float?  @map("electricity_price")
+  landlordId      Int      @map("landlord_id")
+  landlord        Landlord @relation(fields: [landlordId], references: [id], onDelete: Cascade)
+  units           Unit[]
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("properties")
+}
+
+model Unit {
+  id          Int       @id @default(autoincrement())
+  name        String
+  rent        Float
+  deposit     Float?
+  size        String?
+  bedrooms    Int?
+  bathrooms   Int?
+  amenities   Json?
+  status      UnitStatus @default(Vacant)
+  imageUrl    String?   @map("image_url")
+  propertyId  Int       @map("property_id")
+  property    Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  referrals   Referral[]
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@map("units")
+}
+
+model Admin {
+  id           Int        @id @default(autoincrement())
+  username     String     @unique
+  email        String     @unique
+  passwordHash String     @map("password_hash")
+  referrals    Referral[]
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  @@map("admins")
+}
+
+model Referral {
+  id          Int           @id @default(autoincrement())
+  clientName  String?       @map("client_name")
+  clientPhone String?       @map("client_phone")
+  clientEmail String?       @map("client_email")
+  referralFee Float?        @map("referral_fee")
+  status      ReferralStatus @default(Pending)
+  notes       String?
+  adminId     Int           @map("admin_id")
+  admin       Admin         @relation(fields: [adminId], references: [id])
+  unitId      Int           @map("unit_id")
+  unit        Unit          @relation(fields: [unitId], references: [id])
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  @@map("referrals")
+}
+
+enum UnitStatus {
+  Vacant
+  Occupied
+}
+
+enum ReferralStatus {
+  Pending
+  Completed
+  Cancelled
+}
