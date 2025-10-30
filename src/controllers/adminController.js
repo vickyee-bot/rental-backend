@@ -3,7 +3,7 @@ const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
 const adminController = {
-  // Admin dashboard stats
+  // Enhanced Admin Dashboard with more detailed stats
   getDashboard: async (req, res) => {
     try {
       const [
@@ -13,6 +13,8 @@ const adminController = {
         vacantUnits,
         occupiedUnits,
         recentReferrals,
+        recentLandlords,
+        recentProperties,
       ] = await Promise.all([
         prisma.landlord.count(),
         prisma.property.count(),
@@ -32,7 +34,46 @@ const adminController = {
           },
           orderBy: { createdAt: "desc" },
         }),
+        prisma.landlord.findMany({
+          take: 5,
+          select: {
+            id: true,
+            fullName: true,
+            phoneNumber: true,
+            email: true,
+            createdAt: true,
+            properties: {
+              include: {
+                _count: {
+                  select: { units: true },
+                },
+              },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+        }),
+        prisma.property.findMany({
+          take: 5,
+          include: {
+            landlord: {
+              select: {
+                fullName: true,
+                phoneNumber: true,
+              },
+            },
+            units: {
+              select: {
+                status: true,
+              },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+        }),
       ]);
+
+      // Calculate occupancy rates
+      const occupancyRate =
+        totalUnits > 0 ? (occupiedUnits / totalUnits) * 100 : 0;
 
       res.json({
         success: true,
@@ -43,8 +84,11 @@ const adminController = {
             totalUnits,
             vacantUnits,
             occupiedUnits,
+            occupancyRate: Math.round(occupancyRate),
           },
           recentReferrals,
+          recentLandlords,
+          recentProperties,
         },
       });
     } catch (error) {
@@ -56,10 +100,11 @@ const adminController = {
     }
   },
 
-  // Get all landlords
+  // Get all landlords with properties and unit counts
   getLandlords: async (req, res) => {
     try {
-      const { search } = req.query;
+      const { search, page = 1, limit = 10 } = req.query;
+      const skip = (parseInt(page) - 1) * parseInt(limit);
 
       const where = search
         ? {
@@ -71,23 +116,62 @@ const adminController = {
           }
         : {};
 
-      const landlords = await prisma.landlord.findMany({
-        where,
-        include: {
-          properties: {
-            include: {
-              _count: {
-                select: { units: true },
+      const [landlords, total] = await Promise.all([
+        prisma.landlord.findMany({
+          where,
+          include: {
+            properties: {
+              include: {
+                units: {
+                  select: {
+                    status: true,
+                  },
+                },
               },
             },
           },
-        },
-        orderBy: { createdAt: "desc" },
+          skip,
+          take: parseInt(limit),
+          orderBy: { createdAt: "desc" },
+        }),
+        prisma.landlord.count({ where }),
+      ]);
+
+      // Enhance landlords data with unit counts
+      const enhancedLandlords = landlords.map((landlord) => {
+        const totalUnits = landlord.properties.reduce(
+          (sum, property) => sum + property.units.length,
+          0
+        );
+        const vacantUnits = landlord.properties.reduce(
+          (sum, property) =>
+            sum +
+            property.units.filter((unit) => unit.status === "Vacant").length,
+          0
+        );
+
+        return {
+          ...landlord,
+          stats: {
+            totalProperties: landlord.properties.length,
+            totalUnits,
+            vacantUnits,
+            occupiedUnits: totalUnits - vacantUnits,
+          },
+        };
       });
 
       res.json({
         success: true,
-        data: landlords,
+        data: {
+          landlords: enhancedLandlords,
+          pagination: {
+            currentPage: parseInt(page),
+            totalPages: Math.ceil(total / parseInt(limit)),
+            totalItems: total,
+            itemsPerPage: parseInt(limit),
+          },
+        },
       });
     } catch (error) {
       console.error("Get landlords error:", error);
@@ -98,10 +182,11 @@ const adminController = {
     }
   },
 
-  // Get all properties
+  // Get all properties with detailed information
   getProperties: async (req, res) => {
     try {
-      const { search, status } = req.query;
+      const { search, status, page = 1, limit = 10 } = req.query;
+      const skip = (parseInt(page) - 1) * parseInt(limit);
 
       const where = {};
 
@@ -117,28 +202,36 @@ const adminController = {
         ];
       }
 
-      const properties = await prisma.property.findMany({
-        where,
-        include: {
-          landlord: {
-            select: {
-              id: true,
-              fullName: true,
-              phoneNumber: true,
-              email: true,
+      const [properties, total] = await Promise.all([
+        prisma.property.findMany({
+          where,
+          include: {
+            landlord: {
+              select: {
+                id: true,
+                fullName: true,
+                phoneNumber: true,
+                email: true,
+              },
+            },
+            units: {
+              select: {
+                id: true,
+                name: true,
+                rent: true,
+                status: true,
+                amenities: true,
+                imageUrls: true,
+                size: true,
+              },
             },
           },
-          units: {
-            select: {
-              id: true,
-              name: true,
-              rent: true,
-              status: true,
-            },
-          },
-        },
-        orderBy: { createdAt: "desc" },
-      });
+          skip,
+          take: parseInt(limit),
+          orderBy: { createdAt: "desc" },
+        }),
+        prisma.property.count({ where }),
+      ]);
 
       // Filter by unit status if provided
       let filteredProperties = properties;
@@ -148,9 +241,39 @@ const adminController = {
         );
       }
 
+      // Enhance properties with stats
+      const enhancedProperties = filteredProperties.map((property) => {
+        const totalUnits = property.units.length;
+        const vacantUnits = property.units.filter(
+          (unit) => unit.status === "Vacant"
+        ).length;
+        const occupiedUnits = totalUnits - vacantUnits;
+
+        return {
+          ...property,
+          stats: {
+            totalUnits,
+            vacantUnits,
+            occupiedUnits,
+            occupancyRate:
+              totalUnits > 0
+                ? Math.round((occupiedUnits / totalUnits) * 100)
+                : 0,
+          },
+        };
+      });
+
       res.json({
         success: true,
-        data: filteredProperties,
+        data: {
+          properties: enhancedProperties,
+          pagination: {
+            currentPage: parseInt(page),
+            totalPages: Math.ceil(total / parseInt(limit)),
+            totalItems: total,
+            itemsPerPage: parseInt(limit),
+          },
+        },
       });
     } catch (error) {
       console.error("Get properties error:", error);
@@ -161,10 +284,65 @@ const adminController = {
     }
   },
 
-  // Get vacant units for client referral
+  // Get property by ID with full details
+  getPropertyById: async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const property = await prisma.property.findUnique({
+        where: { id: parseInt(id) },
+        include: {
+          landlord: {
+            select: {
+              id: true,
+              fullName: true,
+              phoneNumber: true,
+              email: true,
+              createdAt: true,
+            },
+          },
+          units: {
+            include: {
+              referrals: {
+                include: {
+                  admin: {
+                    select: {
+                      username: true,
+                      email: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!property) {
+        return res.status(404).json({
+          success: false,
+          message: "Property not found",
+        });
+      }
+
+      res.json({
+        success: true,
+        data: property,
+      });
+    } catch (error) {
+      console.error("Get property error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching property",
+      });
+    }
+  },
+
+  // Get vacant units for client referral with enhanced filtering
   getVacantUnits: async (req, res) => {
     try {
-      const { search, maxRent } = req.query;
+      const { search, maxRent, location, page = 1, limit = 10 } = req.query;
+      const skip = (parseInt(page) - 1) * parseInt(limit);
 
       const where = {
         status: "Vacant",
@@ -178,11 +356,6 @@ const adminController = {
               name: { contains: search, mode: "insensitive" },
             },
           },
-          {
-            property: {
-              location: { contains: search, mode: "insensitive" },
-            },
-          },
         ];
       }
 
@@ -190,27 +363,54 @@ const adminController = {
         where.rent = { lte: parseFloat(maxRent) };
       }
 
-      const vacantUnits = await prisma.unit.findMany({
-        where,
-        include: {
-          property: {
-            include: {
-              landlord: {
-                select: {
-                  fullName: true,
-                  phoneNumber: true,
-                  email: true,
+      if (location) {
+        where.property = {
+          location: { contains: location, mode: "insensitive" },
+        };
+      }
+
+      const [vacantUnits, total] = await Promise.all([
+        prisma.unit.findMany({
+          where,
+          include: {
+            property: {
+              include: {
+                landlord: {
+                  select: {
+                    fullName: true,
+                    phoneNumber: true,
+                    email: true,
+                  },
                 },
               },
             },
           },
-        },
-        orderBy: { createdAt: "desc" },
-      });
+          skip,
+          take: parseInt(limit),
+          orderBy: { createdAt: "desc" },
+        }),
+        prisma.unit.count({ where }),
+      ]);
+
+      // Convert image URLs to full URLs
+      const unitsWithFullImageUrls = vacantUnits.map((unit) => ({
+        ...unit,
+        imageUrls: unit.imageUrls.map(
+          (url) => `${req.protocol}://${req.get("host")}/uploads/${url}`
+        ),
+      }));
 
       res.json({
         success: true,
-        data: vacantUnits,
+        data: {
+          units: unitsWithFullImageUrls,
+          pagination: {
+            currentPage: parseInt(page),
+            totalPages: Math.ceil(total / parseInt(limit)),
+            totalItems: total,
+            itemsPerPage: parseInt(limit),
+          },
+        },
       });
     } catch (error) {
       console.error("Get vacant units error:", error);
@@ -236,6 +436,14 @@ const adminController = {
       // Verify unit exists and is vacant
       const unit = await prisma.unit.findUnique({
         where: { id: parseInt(unitId) },
+        include: {
+          property: {
+            select: {
+              name: true,
+              location: true,
+            },
+          },
+        },
       });
 
       if (!unit) {
@@ -270,6 +478,12 @@ const adminController = {
               },
             },
           },
+          admin: {
+            select: {
+              username: true,
+              email: true,
+            },
+          },
         },
       });
 
@@ -290,30 +504,44 @@ const adminController = {
   // Get all referrals
   getReferrals: async (req, res) => {
     try {
-      const { status } = req.query;
+      const { status, page = 1, limit = 10 } = req.query;
+      const skip = (parseInt(page) - 1) * parseInt(limit);
 
       const where = status ? { status } : {};
 
-      const referrals = await prisma.referral.findMany({
-        where,
-        include: {
-          unit: {
-            include: {
-              property: {
-                select: { name: true, location: true },
+      const [referrals, total] = await Promise.all([
+        prisma.referral.findMany({
+          where,
+          include: {
+            unit: {
+              include: {
+                property: {
+                  select: { name: true, location: true },
+                },
               },
             },
+            admin: {
+              select: { username: true, email: true },
+            },
           },
-          admin: {
-            select: { username: true, email: true },
-          },
-        },
-        orderBy: { createdAt: "desc" },
-      });
+          skip,
+          take: parseInt(limit),
+          orderBy: { createdAt: "desc" },
+        }),
+        prisma.referral.count({ where }),
+      ]);
 
       res.json({
         success: true,
-        data: referrals,
+        data: {
+          referrals,
+          pagination: {
+            currentPage: parseInt(page),
+            totalPages: Math.ceil(total / parseInt(limit)),
+            totalItems: total,
+            itemsPerPage: parseInt(limit),
+          },
+        },
       });
     } catch (error) {
       console.error("Get referrals error:", error);

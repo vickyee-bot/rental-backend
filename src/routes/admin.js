@@ -6,9 +6,17 @@ const router = express.Router();
 
 router.use(adminAuth);
 
+// Dashboard
 router.get("/dashboard", adminController.getDashboard);
+
+// Landlords Management
 router.get("/landlords", adminController.getLandlords);
+
+// Properties Management
 router.get("/properties", adminController.getProperties);
+router.get("/properties/:id", adminController.getPropertyById);
+
+// Vacant Units & Referrals
 router.get("/vacant-units", adminController.getVacantUnits);
 router.get("/referrals", adminController.getReferrals);
 router.post("/referrals", adminController.createReferral);

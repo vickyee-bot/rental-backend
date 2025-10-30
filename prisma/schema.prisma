@@ -48,11 +48,9 @@ model Unit {
   rent        Float
   deposit     Float?
   size        String?
-  bedrooms    Int?
-  bathrooms   Int?
   amenities   Json?
   status      UnitStatus @default(Vacant)
-  imageUrl    String?   @map("image_url")
+  imageUrls   String[]   @map("image_urls")
   propertyId  Int       @map("property_id")
   property    Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   referrals   Referral[]
