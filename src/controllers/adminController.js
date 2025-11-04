@@ -220,9 +220,9 @@ const adminController = {
                 name: true,
                 rent: true,
                 status: true,
-                amenities: true,
                 imageUrls: true,
                 size: true,
+                deposit: true,
               },
             },
           },
@@ -280,6 +280,8 @@ const adminController = {
       res.status(500).json({
         success: false,
         message: "Error fetching properties",
+        error:
+          process.env.NODE_ENV === "development" ? error.message : undefined,
       });
     }
   },
@@ -302,17 +304,14 @@ const adminController = {
             },
           },
           units: {
-            include: {
-              referrals: {
-                include: {
-                  admin: {
-                    select: {
-                      username: true,
-                      email: true,
-                    },
-                  },
-                },
-              },
+            select: {
+              id: true,
+              name: true,
+              rent: true,
+              status: true,
+              imageUrls: true,
+              size: true,
+              deposit: true,
             },
           },
         },
@@ -392,18 +391,10 @@ const adminController = {
         prisma.unit.count({ where }),
       ]);
 
-      // Convert image URLs to full URLs
-      const unitsWithFullImageUrls = vacantUnits.map((unit) => ({
-        ...unit,
-        imageUrls: unit.imageUrls.map(
-          (url) => `${req.protocol}://${req.get("host")}/uploads/${url}`
-        ),
-      }));
-
       res.json({
         success: true,
         data: {
-          units: unitsWithFullImageUrls,
+          units: vacantUnits,
           pagination: {
             currentPage: parseInt(page),
             totalPages: Math.ceil(total / parseInt(limit)),

@@ -14,19 +14,50 @@ const authMiddleware = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const landlord = await prisma.landlord.findUnique({
-      where: { id: decoded.userId },
-      select: { id: true, fullName: true, phoneNumber: true, email: true },
-    });
 
-    if (!landlord) {
-      return res.status(401).json({
-        success: false,
-        message: "Token is not valid",
+    if (decoded.role === "landlord") {
+      const landlord = await prisma.landlord.findUnique({
+        where: { id: decoded.userId },
+        select: {
+          id: true,
+          fullName: true,
+          phoneNumber: true,
+          email: true,
+          isVerified: true,
+        },
       });
+
+      if (!landlord) {
+        return res.status(401).json({
+          success: false,
+          message: "Token is not valid",
+        });
+      }
+
+      req.user = landlord;
+
+      // Optional: Check if email is verified for certain actions
+      // if (!landlord.isVerified && req.path !== '/verify-email') {
+      //   return res.status(403).json({
+      //     success: false,
+      //     message: 'Please verify your email to access this feature'
+      //   });
+      // }
+    } else if (decoded.role === "admin") {
+      const admin = await prisma.admin.findUnique({
+        where: { id: decoded.userId },
+      });
+
+      if (!admin) {
+        return res.status(401).json({
+          success: false,
+          message: "Token is not valid",
+        });
+      }
+
+      req.admin = admin;
     }
 
-    req.user = landlord;
     next();
   } catch (error) {
     res.status(401).json({
@@ -36,45 +67,14 @@ const authMiddleware = async (req, res, next) => {
   }
 };
 
-const adminAuth = async (req, res, next) => {
-  try {
-    const token = req.header("Authorization")?.replace("Bearer ", "");
-
-    if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: "No token, authorization denied",
-      });
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    if (decoded.role !== "admin") {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied. Admin only.",
-      });
-    }
-
-    const admin = await prisma.admin.findUnique({
-      where: { id: decoded.userId },
-    });
-
-    if (!admin) {
-      return res.status(401).json({
-        success: false,
-        message: "Admin not found",
-      });
-    }
-
-    req.admin = admin;
-    next();
-  } catch (error) {
-    res.status(401).json({
+const requireVerifiedEmail = (req, res, next) => {
+  if (req.user && !req.user.isVerified) {
+    return res.status(403).json({
       success: false,
-      message: "Token is not valid",
+      message: "Please verify your email to access this feature",
     });
   }
+  next();
 };
 
-module.exports = { authMiddleware, adminAuth };
+module.exports = { authMiddleware, requireVerifiedEmail };

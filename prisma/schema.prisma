@@ -15,14 +15,19 @@ datasource db {
 }
 
 model Landlord {
-  id           Int        @id @default(autoincrement())
-  fullName     String     @map("full_name")
-  phoneNumber  String     @unique @map("phone_number")
-  email        String?
-  passwordHash String     @map("password_hash")
-  properties   Property[]
-  createdAt    DateTime   @default(now()) @map("created_at")
-  updatedAt    DateTime   @updatedAt @map("updated_at")
+  id            Int       @id @default(autoincrement())
+  fullName      String
+  phoneNumber   String    @unique
+  email         String?
+  passwordHash  String
+  isVerified    Boolean   @default(false)
+  verifyToken   String?
+  verifyExpires DateTime?
+  resetToken    String?
+  resetExpires  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  properties    Property[]
 
   @@map("landlords")
 }
@@ -48,17 +53,17 @@ model Unit {
   rent        Float
   deposit     Float?
   size        String?
-  amenities   Json?
   status      UnitStatus @default(Vacant)
   imageUrls   String[]   @map("image_urls")
-  propertyId  Int       @map("property_id")
-  property    Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  propertyId  Int        @map("property_id")
+  property    Property   @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   referrals   Referral[]
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
 
   @@map("units")
 }
+
 
 model Admin {
   id           Int        @id @default(autoincrement())

@@ -55,10 +55,6 @@ async function main() {
             rent: faker.number.int({ min: 8000, max: 40000 }),
             deposit: faker.number.int({ min: 8000, max: 40000 }),
             size: faker.number.int({ min: 500, max: 1200 }) + " sq ft",
-            amenities: faker.helpers.arrayElements(
-              ["Parking", "Water", "WiFi", "Security", "Gym"],
-              3
-            ),
             imageUrls: [],
             status: faker.helpers.arrayElement(["Vacant", "Occupied"]),
             propertyId: property.id,
