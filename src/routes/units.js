@@ -4,6 +4,7 @@ const unitController = require("../controllers/unitController");
 
 const router = express.Router();
 
+// Apply authMiddleware to all routes in this router
 router.use(authMiddleware);
 
 router.get("/", unitController.getUnits);

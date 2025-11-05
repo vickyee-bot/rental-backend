@@ -4,6 +4,7 @@ const propertyController = require("../controllers/propertyController");
 
 const router = express.Router();
 
+// Apply authMiddleware to all routes in this router
 router.use(authMiddleware);
 
 router.get("/", propertyController.getProperties);

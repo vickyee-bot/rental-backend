@@ -4,6 +4,7 @@ const adminController = require("../controllers/adminController");
 
 const router = express.Router();
 
+// Apply adminAuth to all routes in this router
 router.use(adminAuth);
 
 // Dashboard

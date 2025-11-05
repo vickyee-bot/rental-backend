@@ -1,0 +1,48 @@
+.
+├── package-lock.json
+├── package.json
+├── package.json.backup
+├── prisma
+│   ├── migrations
+│   │   ├── 20251029063757_init
+│   │   │   └── migration.sql
+│   │   ├── 20251029195239_remove_bedrooms_bathrooms
+│   │   │   └── migration.sql
+│   │   ├── 20251103100731_add_email_verification
+│   │   │   └── migration.sql
+│   │   └── migration_lock.toml
+│   ├── schema.prisma
+│   └── seed.js
+├── src
+│   ├── app.js
+│   ├── controllers
+│   │   ├── adminController.js
+│   │   ├── authController.js
+│   │   ├── landlordController.js
+│   │   ├── propertyController.js
+│   │   └── unitController.js
+│   ├── middleware
+│   │   ├── auth.js
+│   │   ├── multer.js
+│   │   └── upload.js
+│   ├── routes
+│   │   ├── admin.js
+│   │   ├── auth.js
+│   │   ├── landlords.js
+│   │   ├── properties.js
+│   │   └── units.js
+│   ├── structure.txt
+│   └── utils
+│       ├── auth.js
+│       ├── cloudinary.js
+│       ├── emailService.js
+│       └── tokenUtils.js
+├── structure.txt
+└── uploads
+    ├── unit-1761814873747-722464632.jpg
+    ├── unit-1761814873763-175033442.jpg
+    ├── unit-1761981607914-973947884.jpg
+    ├── unit-1761981607916-975655340.jpg
+    └── upload.js
+
+12 directories, 34 files

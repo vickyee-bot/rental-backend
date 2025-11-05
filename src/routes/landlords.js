@@ -4,6 +4,7 @@ const landlordController = require("../controllers/landlordController");
 
 const router = express.Router();
 
+// Apply authMiddleware to all routes in this router
 router.use(authMiddleware);
 
 router.get("/profile", landlordController.getProfile);

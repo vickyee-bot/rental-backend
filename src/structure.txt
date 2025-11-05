@@ -1,0 +1,26 @@
+.
+├── app.js
+├── controllers
+│   ├── adminController.js
+│   ├── authController.js
+│   ├── landlordController.js
+│   ├── propertyController.js
+│   └── unitController.js
+├── middleware
+│   ├── auth.js
+│   ├── multer.js
+│   └── upload.js
+├── routes
+│   ├── admin.js
+│   ├── auth.js
+│   ├── landlords.js
+│   ├── properties.js
+│   └── units.js
+├── structure.txt
+└── utils
+    ├── auth.js
+    ├── cloudinary.js
+    ├── emailService.js
+    └── tokenUtils.js
+
+5 directories, 19 files
