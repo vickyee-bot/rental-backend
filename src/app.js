@@ -9,6 +9,7 @@ const landlordRoutes = require("./routes/landlords");
 const propertyRoutes = require("./routes/properties");
 const unitRoutes = require("./routes/units");
 const adminRoutes = require("./routes/admin");
+const imageRoutes = require("./routes/images");
 
 const app = express();
 
@@ -34,6 +35,7 @@ app.use("/api/landlords", landlordRoutes);
 app.use("/api/properties", propertyRoutes);
 app.use("/api/units", unitRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/images", imageRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {

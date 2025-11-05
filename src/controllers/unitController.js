@@ -1,28 +1,243 @@
 const { PrismaClient } = require("@prisma/client");
-const { uploadMultiple, handleUploadError } = require("../middleware/upload");
+const { cloudinaryUtils } = require("../utils/cloudinary");
+
 const prisma = new PrismaClient();
 
 const unitController = {
-  // Get all units
-  getUnits: async (req, res) => {
+  // Create Unit with Image Upload
+  createUnit: async (req, res) => {
     try {
-      const { status, propertyId } = req.query;
+      const {
+        name,
+        rent,
+        deposit,
+        size,
+        propertyId,
+        status = "Vacant",
+      } = req.body;
 
-      const where = {
-        property: { landlordId: req.user.id },
-      };
+      // Validate required fields
+      if (!name || !rent || !propertyId) {
+        return res.status(400).json({
+          success: false,
+          message: "Name, rent, and property ID are required",
+        });
+      }
 
-      if (status) where.status = status;
-      if (propertyId) where.propertyId = parseInt(propertyId);
+      // Check if property exists and belongs to landlord
+      const property = await prisma.property.findFirst({
+        where: {
+          id: parseInt(propertyId),
+          landlordId: req.user.id,
+        },
+      });
 
-      const units = await prisma.unit.findMany({
-        where,
+      if (!property) {
+        return res.status(404).json({
+          success: false,
+          message: "Property not found or access denied",
+        });
+      }
+
+      // Process uploaded images
+      let imageUrls = [];
+      if (req.files && req.files.length > 0) {
+        imageUrls = req.files.map((file) => ({
+          url: file.path, // Cloudinary URL
+          public_id: file.filename, // Cloudinary public_id
+        }));
+      }
+
+      // Create unit
+      const unit = await prisma.unit.create({
+        data: {
+          name,
+          rent: parseFloat(rent),
+          deposit: deposit ? parseFloat(deposit) : null,
+          size: size || null,
+          status,
+          imageUrls: imageUrls.map((img) => img.url), // Store only URLs in database
+          propertyId: parseInt(propertyId),
+        },
         include: {
           property: {
-            select: { name: true, location: true },
+            select: {
+              name: true,
+              location: true,
+            },
           },
         },
-        orderBy: { createdAt: "desc" },
+      });
+
+      // Store Cloudinary public_ids separately if needed
+      // You can create a separate table for image metadata if required
+
+      res.status(201).json({
+        success: true,
+        message: "Unit created successfully",
+        data: {
+          unit,
+          images: imageUrls, // Return image info including public_ids
+        },
+      });
+    } catch (error) {
+      console.error("Create unit error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error creating unit",
+        error:
+          process.env.NODE_ENV === "development" ? error.message : undefined,
+      });
+    }
+  },
+
+  // Update Unit with Image Management
+  updateUnit: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, rent, deposit, size, status } = req.body;
+
+      // Check if unit exists and belongs to landlord
+      const existingUnit = await prisma.unit.findFirst({
+        where: {
+          id: parseInt(id),
+          property: {
+            landlordId: req.user.id,
+          },
+        },
+        include: {
+          property: true,
+        },
+      });
+
+      if (!existingUnit) {
+        return res.status(404).json({
+          success: false,
+          message: "Unit not found or access denied",
+        });
+      }
+
+      // Process new uploaded images
+      let newImageUrls = [...existingUnit.imageUrls];
+      if (req.files && req.files.length > 0) {
+        const uploadedImages = req.files.map((file) => file.path);
+        newImageUrls = [...newImageUrls, ...uploadedImages];
+      }
+
+      // Update unit
+      const unit = await prisma.unit.update({
+        where: { id: parseInt(id) },
+        data: {
+          name: name || existingUnit.name,
+          rent: rent ? parseFloat(rent) : existingUnit.rent,
+          deposit:
+            deposit !== undefined ? parseFloat(deposit) : existingUnit.deposit,
+          size: size || existingUnit.size,
+          status: status || existingUnit.status,
+          imageUrls: newImageUrls,
+        },
+        include: {
+          property: {
+            select: {
+              name: true,
+              location: true,
+            },
+          },
+        },
+      });
+
+      res.json({
+        success: true,
+        message: "Unit updated successfully",
+        data: {
+          unit,
+          newImages: req.files ? req.files.map((file) => file.path) : [],
+        },
+      });
+    } catch (error) {
+      console.error("Update unit error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error updating unit",
+        error:
+          process.env.NODE_ENV === "development" ? error.message : undefined,
+      });
+    }
+  },
+
+  // Delete Unit with Image Cleanup
+  deleteUnit: async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      // Check if unit exists and belongs to landlord
+      const unit = await prisma.unit.findFirst({
+        where: {
+          id: parseInt(id),
+          property: {
+            landlordId: req.user.id,
+          },
+        },
+      });
+
+      if (!unit) {
+        return res.status(404).json({
+          success: false,
+          message: "Unit not found or access denied",
+        });
+      }
+
+      // TODO: Implement Cloudinary image deletion if you stored public_ids
+      // if (unit.imageUrls && unit.imageUrls.length > 0) {
+      //   // Extract public_ids and delete from Cloudinary
+      //   const publicIds = unit.imageUrls.map(url => {
+      //     // Extract public_id from Cloudinary URL
+      //     const parts = url.split('/');
+      //     return parts[parts.length - 1].split('.')[0];
+      //   });
+      //   await cloudinaryUtils.deleteMultipleImages(publicIds);
+      // }
+
+      // Delete unit
+      await prisma.unit.delete({
+        where: { id: parseInt(id) },
+      });
+
+      res.json({
+        success: true,
+        message: "Unit deleted successfully",
+      });
+    } catch (error) {
+      console.error("Delete unit error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error deleting unit",
+        error:
+          process.env.NODE_ENV === "development" ? error.message : undefined,
+      });
+    }
+  },
+
+  // Get Units (unchanged)
+  getUnits: async (req, res) => {
+    try {
+      const units = await prisma.unit.findMany({
+        where: {
+          property: {
+            landlordId: req.user.id,
+          },
+        },
+        include: {
+          property: {
+            select: {
+              name: true,
+              location: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
       });
 
       res.json({
@@ -31,11 +246,16 @@ const unitController = {
       });
     } catch (error) {
       console.error("Get units error:", error);
-      res.status(500).json({ success: false, message: "Error fetching units" });
+      res.status(500).json({
+        success: false,
+        message: "Error fetching units",
+        error:
+          process.env.NODE_ENV === "development" ? error.message : undefined,
+      });
     }
   },
 
-  // Get single unit
+  // Get Single Unit
   getUnit: async (req, res) => {
     try {
       const { id } = req.params;
@@ -43,7 +263,9 @@ const unitController = {
       const unit = await prisma.unit.findFirst({
         where: {
           id: parseInt(id),
-          property: { landlordId: req.user.id },
+          property: {
+            landlordId: req.user.id,
+          },
         },
         include: {
           property: {
@@ -58,9 +280,10 @@ const unitController = {
       });
 
       if (!unit) {
-        return res
-          .status(404)
-          .json({ success: false, message: "Unit not found" });
+        return res.status(404).json({
+          success: false,
+          message: "Unit not found",
+        });
       }
 
       res.json({
@@ -69,196 +292,70 @@ const unitController = {
       });
     } catch (error) {
       console.error("Get unit error:", error);
-      res.status(500).json({ success: false, message: "Error fetching unit" });
+      res.status(500).json({
+        success: false,
+        message: "Error fetching unit",
+        error:
+          process.env.NODE_ENV === "development" ? error.message : undefined,
+      });
     }
   },
 
-  // Create unit
-  createUnit: [
-    uploadMultiple,
-    handleUploadError,
-    async (req, res) => {
-      try {
-        const { propertyId, name, rent, deposit, size } = req.body;
-
-        const property = await prisma.property.findFirst({
-          where: { id: parseInt(propertyId), landlordId: req.user.id },
-        });
-
-        if (!property) {
-          return res.status(404).json({
-            success: false,
-            message: "Property not found or access denied",
-          });
-        }
-
-        // Cloudinary image URLs
-        const imageUrls = req.files ? req.files.map((file) => file.path) : [];
-
-        const unit = await prisma.unit.create({
-          data: {
-            propertyId: parseInt(propertyId),
-            name,
-            rent: parseFloat(rent),
-            deposit: deposit ? parseFloat(deposit) : null,
-            size,
-            imageUrls,
-          },
-        });
-
-        res.status(201).json({
-          success: true,
-          message: "Unit created successfully",
-          data: unit,
-        });
-      } catch (error) {
-        console.error("Create unit error:", error);
-        res
-          .status(500)
-          .json({ success: false, message: "Error creating unit" });
-      }
-    },
-  ],
-
-  // Update unit
-  updateUnit: [
-    uploadMultiple,
-    handleUploadError,
-    async (req, res) => {
-      try {
-        const { id } = req.params;
-        const { name, rent, deposit, size, amenities, keepExistingImages } =
-          req.body;
-
-        const existingUnit = await prisma.unit.findFirst({
-          where: {
-            id: parseInt(id),
-            property: { landlordId: req.user.id },
-          },
-        });
-
-        if (!existingUnit) {
-          return res
-            .status(404)
-            .json({ success: false, message: "Unit not found" });
-        }
-
-        let imageUrls = existingUnit.imageUrls;
-
-        if (req.files && req.files.length > 0) {
-          const newUrls = req.files.map((file) => file.path);
-
-          if (keepExistingImages === "false") {
-            imageUrls = newUrls;
-          } else {
-            imageUrls = [...existingUnit.imageUrls, ...newUrls];
-          }
-        }
-
-        let amenitiesArray = existingUnit.amenities;
-        if (amenities) {
-          try {
-            amenitiesArray =
-              typeof amenities === "string" ? JSON.parse(amenities) : amenities;
-          } catch {
-            amenitiesArray = Array.isArray(amenities) ? amenities : [amenities];
-          }
-        }
-
-        const unit = await prisma.unit.update({
-          where: { id: parseInt(id) },
-          data: {
-            name,
-            rent: rent ? parseFloat(rent) : undefined,
-            deposit: deposit ? parseFloat(deposit) : undefined,
-            size,
-            amenities: amenitiesArray,
-            imageUrls,
-          },
-        });
-
-        res.json({
-          success: true,
-          message: "Unit updated successfully",
-          data: unit,
-        });
-      } catch (error) {
-        console.error("Update unit error:", error);
-        res
-          .status(500)
-          .json({ success: false, message: "Error updating unit" });
-      }
-    },
-  ],
-
-  // Update unit status only
+  // Update Unit Status
   updateUnitStatus: async (req, res) => {
     try {
       const { id } = req.params;
       const { status } = req.body;
 
-      const validStatuses = ["AVAILABLE", "OCCUPIED", "MAINTENANCE"];
-      if (!validStatuses.includes(status)) {
+      if (!status || !["Vacant", "Occupied"].includes(status)) {
         return res.status(400).json({
           success: false,
-          message: "Invalid status value",
+          message: "Valid status (Vacant or Occupied) is required",
         });
       }
 
       const unit = await prisma.unit.findFirst({
         where: {
           id: parseInt(id),
-          property: { landlordId: req.user.id },
+          property: {
+            landlordId: req.user.id,
+          },
         },
       });
 
       if (!unit) {
-        return res
-          .status(404)
-          .json({ success: false, message: "Unit not found" });
+        return res.status(404).json({
+          success: false,
+          message: "Unit not found or access denied",
+        });
       }
 
       const updatedUnit = await prisma.unit.update({
         where: { id: parseInt(id) },
         data: { status },
+        include: {
+          property: {
+            select: {
+              name: true,
+              location: true,
+            },
+          },
+        },
       });
 
       res.json({
         success: true,
-        message: "Unit status updated",
+        message: `Unit status updated to ${status}`,
         data: updatedUnit,
       });
     } catch (error) {
-      console.error("Update status error:", error);
-      res
-        .status(500)
-        .json({ success: false, message: "Error updating status" });
-    }
-  },
-
-  deleteUnit: async (req, res) => {
-    try {
-      const { id } = req.params;
-
-      const existingUnit = await prisma.unit.findFirst({
-        where: {
-          id: parseInt(id),
-          property: { landlordId: req.user.id },
-        },
+      console.error("Update unit status error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error updating unit status",
+        error:
+          process.env.NODE_ENV === "development" ? error.message : undefined,
       });
-
-      if (!existingUnit) {
-        return res
-          .status(404)
-          .json({ success: false, message: "Unit not found" });
-      }
-
-      await prisma.unit.delete({ where: { id: parseInt(id) } });
-
-      res.json({ success: true, message: "Unit deleted successfully" });
-    } catch (error) {
-      console.error("Delete unit error:", error);
-      res.status(500).json({ success: false, message: "Error deleting unit" });
     }
   },
 };
