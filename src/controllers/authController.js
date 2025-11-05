@@ -10,7 +10,7 @@ const tokenUtils = require("../utils/tokenUtils");
 const prisma = new PrismaClient();
 
 const authController = {
-  // ✅ Landlord Registration with Email Verification (Mobile App)
+  // ✅ Landlord Registration with Email Verification (Mobile App) - UPDATED
   registerLandlord: async (req, res) => {
     try {
       const { fullName, phoneNumber, email, password, confirmPassword } =
@@ -102,30 +102,34 @@ const authController = {
         },
       });
 
-      // Send verification email
-      const emailResult = await emailService.sendVerificationEmail(
-        email,
-        verifyToken,
-        fullName
-      );
-
-      if (!emailResult.success) {
-        console.error("Failed to send verification email:", emailResult.error);
-        // Continue with registration even if email fails
-      }
-
-      // Generate temporary token (limited access until verified)
+      // Generate temporary token
       const token = generateToken(landlord.id, "landlord");
 
+      // ✅ CRITICAL FIX: Send email in background without waiting for response
+      emailService
+        .sendVerificationEmail(email, verifyToken, fullName)
+        .then((result) => {
+          if (result.success) {
+            console.log("✅ Verification email sent in background to:", email);
+          } else {
+            console.error("❌ Background email failed:", result.error);
+          }
+        })
+        .catch((error) => {
+          console.error("❌ Background email error:", error.message);
+        });
+
+      // ✅ CRITICAL FIX: Respond immediately without waiting for email
       res.status(201).json({
         success: true,
-        message: emailResult.success
-          ? "Registration successful. Verification code sent to your email."
-          : "Registration successful. Please check your email for verification code.",
+        message:
+          "Registration successful. Check your email for verification code.",
         data: {
           landlord,
           token, // Temporary token for email verification flow
           requiresVerification: true,
+          verificationCode:
+            process.env.NODE_ENV === "development" ? verifyToken : undefined, // For testing
         },
       });
     } catch (error) {
@@ -206,7 +210,7 @@ const authController = {
     }
   },
 
-  // ✅ Resend Verification Code (Mobile App)
+  // ✅ Resend Verification Code (Mobile App) - UPDATED
   resendVerification: async (req, res) => {
     try {
       const { email } = req.body;
@@ -254,19 +258,19 @@ const authController = {
         },
       });
 
-      // Send verification email
-      const emailResult = await emailService.sendVerificationEmail(
-        email,
-        verifyToken,
-        landlord.fullName
-      );
-
-      if (!emailResult.success) {
-        return res.status(500).json({
-          success: false,
-          message: "Failed to send verification code",
+      // ✅ FIX: Send email in background
+      emailService
+        .sendVerificationEmail(email, verifyToken, landlord.fullName)
+        .then((result) => {
+          if (result.success) {
+            console.log("✅ Resend verification email sent to:", email);
+          } else {
+            console.error("❌ Resend email failed:", result.error);
+          }
+        })
+        .catch((error) => {
+          console.error("❌ Resend email error:", error.message);
         });
-      }
 
       res.json({
         success: true,
@@ -336,7 +340,7 @@ const authController = {
     }
   },
 
-  // ✅ Forgot Password - Send Reset Code (Mobile App)
+  // ✅ Forgot Password - Send Reset Code (Mobile App) - UPDATED
   forgotPassword: async (req, res) => {
     try {
       const { email } = req.body;
@@ -377,19 +381,19 @@ const authController = {
         },
       });
 
-      // Send password reset email
-      const emailResult = await emailService.sendPasswordResetEmail(
-        email,
-        resetToken,
-        landlord.fullName
-      );
-
-      if (!emailResult.success) {
-        return res.status(500).json({
-          success: false,
-          message: "Failed to send reset code",
+      // ✅ FIX: Send email in background
+      emailService
+        .sendPasswordResetEmail(email, resetToken, landlord.fullName)
+        .then((result) => {
+          if (result.success) {
+            console.log("✅ Password reset email sent to:", email);
+          } else {
+            console.error("❌ Password reset email failed:", result.error);
+          }
+        })
+        .catch((error) => {
+          console.error("❌ Password reset email error:", error.message);
         });
-      }
 
       res.json({
         success: true,
@@ -464,11 +468,19 @@ const authController = {
         },
       });
 
-      // Send password changed confirmation email
-      await emailService.sendPasswordChangedEmail(
-        landlord.email,
-        landlord.fullName
-      );
+      // ✅ FIX: Send confirmation email in background
+      emailService
+        .sendPasswordChangedEmail(landlord.email, landlord.fullName)
+        .then((result) => {
+          if (result.success) {
+            console.log("✅ Password changed email sent to:", landlord.email);
+          } else {
+            console.error("❌ Password changed email failed:", result.error);
+          }
+        })
+        .catch((error) => {
+          console.error("❌ Password changed email error:", error.message);
+        });
 
       res.json({
         success: true,
@@ -488,9 +500,6 @@ const authController = {
   // ✅ Logout (Mobile App)
   logout: async (req, res) => {
     try {
-      // For mobile apps, we handle logout client-side by removing the token
-      // You can also implement token blacklisting if needed
-
       res.json({
         success: true,
         message: "Logged out successfully",
