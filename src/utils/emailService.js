@@ -5,15 +5,19 @@ console.log("SMTP_HOST:", process.env.SMTP_HOST);
 console.log("SMTP_USER:", process.env.SMTP_USER);
 console.log("SMTP_FROM:", process.env.SMTP_FROM);
 
-// Create transporter for Gmail
+// Create transporter for Gmail with better configuration
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: process.env.SMTP_PORT,
-  secure: false, // true for 465, false for other ports
+  secure: false,
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
+  // Add connection timeout settings
+  connectionTimeout: 30000, // 30 seconds
+  greetingTimeout: 30000,
+  socketTimeout: 30000,
 });
 
 // Test the transporter configuration
@@ -26,9 +30,13 @@ transporter.verify(function (error, success) {
 });
 
 const emailService = {
-  // Send verification email for mobile app
-  sendVerificationEmail: async (email, token, fullName) => {
-    console.log("📨 Attempting to send verification email to:", email);
+  // Send verification email with retry logic
+  sendVerificationEmail: async (email, token, fullName, retryCount = 0) => {
+    console.log(
+      `📨 Attempting to send verification email to: ${email} (Attempt ${
+        retryCount + 1
+      })`
+    );
     console.log("📱 Mobile App - Verification Code:", token);
 
     const mailOptions = {
@@ -83,7 +91,7 @@ const emailService = {
       const emailPromise = transporter.sendMail(mailOptions);
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(
-          () => reject(new Error("Email sending timeout after 15 seconds")),
+          () => reject(new Error("Email sending timeout after 30 seconds")),
           30000
         );
       });
@@ -93,17 +101,41 @@ const emailService = {
       console.log("📤 Message ID:", info.messageId);
       return { success: true, messageId: info.messageId };
     } catch (error) {
-      console.error("❌ Failed to send verification email to:", email);
-      console.error("Error details:", error.message);
-      return { success: false, error: error.message };
+      console.error(
+        `❌ Failed to send verification email to ${email} (Attempt ${
+          retryCount + 1
+        }):`,
+        error.message
+      );
+
+      // Retry logic - maximum 2 retries
+      if (retryCount < 2) {
+        console.log(`🔄 Retrying email send to ${email} in 5 seconds...`);
+        await new Promise((resolve) => setTimeout(resolve, 5000)); // Wait 5 seconds
+        return emailService.sendVerificationEmail(
+          email,
+          token,
+          fullName,
+          retryCount + 1
+        );
+      } else {
+        console.error(`💥 All retry attempts failed for ${email}`);
+        return {
+          success: false,
+          error: error.message,
+          retriesAttempted: retryCount + 1,
+        };
+      }
     }
   },
 
-  // Send password reset email
-  sendPasswordResetEmail: async (email, token, fullName) => {
-    const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
-
-    console.log("📨 Attempting to send password reset email to:", email);
+  // Send password reset email with retry logic
+  sendPasswordResetEmail: async (email, token, fullName, retryCount = 0) => {
+    console.log(
+      `📨 Attempting to send password reset email to: ${email} (Attempt ${
+        retryCount + 1
+      })`
+    );
 
     const mailOptions = {
       from: process.env.SMTP_FROM,
@@ -142,15 +174,45 @@ const emailService = {
       console.log("📤 Message ID:", info.messageId);
       return { success: true, messageId: info.messageId };
     } catch (error) {
-      console.error("❌ Failed to send password reset email to:", email);
-      console.error("Error details:", error.message);
-      return { success: false, error: error.message };
+      console.error(
+        `❌ Failed to send password reset email to ${email} (Attempt ${
+          retryCount + 1
+        }):`,
+        error.message
+      );
+
+      // Retry logic - maximum 2 retries
+      if (retryCount < 2) {
+        console.log(
+          `🔄 Retrying password reset email to ${email} in 5 seconds...`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        return emailService.sendPasswordResetEmail(
+          email,
+          token,
+          fullName,
+          retryCount + 1
+        );
+      } else {
+        console.error(
+          `💥 All retry attempts failed for password reset to ${email}`
+        );
+        return {
+          success: false,
+          error: error.message,
+          retriesAttempted: retryCount + 1,
+        };
+      }
     }
   },
 
-  // Send password changed confirmation
-  sendPasswordChangedEmail: async (email, fullName) => {
-    console.log("📨 Attempting to send password changed email to:", email);
+  // Send password changed confirmation with retry logic
+  sendPasswordChangedEmail: async (email, fullName, retryCount = 0) => {
+    console.log(
+      `📨 Attempting to send password changed email to: ${email} (Attempt ${
+        retryCount + 1
+      })`
+    );
 
     const mailOptions = {
       from: process.env.SMTP_FROM,
@@ -187,9 +249,34 @@ const emailService = {
       console.log("📤 Message ID:", info.messageId);
       return { success: true, messageId: info.messageId };
     } catch (error) {
-      console.error("❌ Failed to send password changed email to:", email);
-      console.error("Error details:", error.message);
-      return { success: false, error: error.message };
+      console.error(
+        `❌ Failed to send password changed email to ${email} (Attempt ${
+          retryCount + 1
+        }):`,
+        error.message
+      );
+
+      // Retry logic - maximum 2 retries
+      if (retryCount < 2) {
+        console.log(
+          `🔄 Retrying password changed email to ${email} in 5 seconds...`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        return emailService.sendPasswordChangedEmail(
+          email,
+          fullName,
+          retryCount + 1
+        );
+      } else {
+        console.error(
+          `💥 All retry attempts failed for password changed email to ${email}`
+        );
+        return {
+          success: false,
+          error: error.message,
+          retriesAttempted: retryCount + 1,
+        };
+      }
     }
   },
 };

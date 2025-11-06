@@ -49,6 +49,15 @@ const authController = {
       });
 
       if (existingByEmail) {
+        // If user exists but is not verified, allow resending verification
+        if (!existingByEmail.isVerified) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Email already registered but not verified. Please verify your email or use resend verification.",
+            requiresVerification: true,
+          });
+        }
         return res.status(400).json({
           success: false,
           message: "Email already registered",
@@ -90,31 +99,34 @@ const authController = {
       // Generate temporary token
       const token = generateToken(landlord.id, "landlord");
 
-      // ✅ Send email in background without waiting for response
-      emailService
-        .sendVerificationEmail(email, verifyToken, fullName)
-        .then((result) => {
-          if (result.success) {
-            console.log("✅ Verification email sent in background to:", email);
-          } else {
-            console.error("❌ Background email failed:", result.error);
-          }
-        })
-        .catch((error) => {
-          console.error("❌ Background email error:", error.message);
-        });
+      // ✅ Send email with retry logic
+      const emailResult = await emailService.sendVerificationEmail(
+        email,
+        verifyToken,
+        fullName
+      );
 
-      // ✅ Respond immediately without waiting for email
+      if (!emailResult.success) {
+        console.error(
+          "❌ Email sending failed after retries:",
+          emailResult.error
+        );
+        // Still return success to user, but log the error
+        console.log("⚠️ User registered but verification email failed to send");
+      }
+
       res.status(201).json({
         success: true,
-        message:
-          "Registration successful. Check your email for verification code.",
+        message: emailResult.success
+          ? "Registration successful. Check your email for verification code."
+          : "Registration successful, but verification email may be delayed. You can request a new code if needed.",
         data: {
           landlord,
-          token, // Temporary token for email verification flow
+          token,
           requiresVerification: true,
+          emailSent: emailResult.success,
           verificationCode:
-            process.env.NODE_ENV === "development" ? verifyToken : undefined, // For testing
+            process.env.NODE_ENV === "development" ? verifyToken : undefined,
         },
       });
     } catch (error) {
@@ -152,9 +164,25 @@ const authController = {
       });
 
       if (!landlord) {
+        // Check if code exists but expired
+        const expiredLandlord = await prisma.landlord.findFirst({
+          where: {
+            email: email,
+            verifyToken: code,
+          },
+        });
+
+        if (expiredLandlord) {
+          return res.status(400).json({
+            success: false,
+            message: "Verification code has expired. Please request a new one.",
+            codeExpired: true,
+          });
+        }
+
         return res.status(400).json({
           success: false,
-          message: "Invalid or expired verification code",
+          message: "Invalid verification code",
         });
       }
 
@@ -181,7 +209,7 @@ const authController = {
             email: landlord.email,
             isVerified: true,
           },
-          token, // Full access token after verification
+          token,
         },
       });
     } catch (error) {
@@ -195,7 +223,7 @@ const authController = {
     }
   },
 
-  // ✅ Resend Verification Code (Mobile App)
+  // ✅ Resend Verification Code with improved logic (Mobile App)
   resendVerification: async (req, res) => {
     try {
       const { email } = req.body;
@@ -226,6 +254,47 @@ const authController = {
         });
       }
 
+      // Check if we should wait before resending (prevent spam)
+      // FIX: Use verifyExpires to calculate time since last verification
+      const lastVerificationSent = landlord.verifyExpires;
+      const now = new Date();
+
+      // Calculate how much time has passed since the verification was sent
+      const timeSinceLastVerification = now - lastVerificationSent;
+      const minResendInterval = 1 * 60 * 1000; // 1 minute in milliseconds
+
+      console.log("🔍 Resend verification debug:", {
+        email,
+        lastVerificationSent,
+        now,
+        timeSinceLastVerification,
+        minResendInterval,
+      });
+
+      // If timeSinceLastVerification is negative, it means verifyExpires is in the future
+      // If it's positive but less than minResendInterval, user needs to wait
+      if (
+        timeSinceLastVerification < minResendInterval &&
+        timeSinceLastVerification > 0
+      ) {
+        const waitTime = Math.ceil(
+          (minResendInterval - timeSinceLastVerification) / 1000
+        );
+        return res.status(429).json({
+          success: false,
+          message: `Please wait ${waitTime} seconds before requesting a new verification code`,
+          retryAfter: waitTime,
+        });
+      }
+
+      // If the verification code has expired (more than 24 hours old), allow immediate resend
+      const verificationExpiry = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+      if (timeSinceLastVerification > verificationExpiry) {
+        console.log(
+          "🔄 Verification code expired, generating new one immediately"
+        );
+      }
+
       // Generate new 6-digit verification code
       const verifyToken = Math.floor(
         100000 + Math.random() * 900000
@@ -243,23 +312,32 @@ const authController = {
         },
       });
 
-      // ✅ Send email in background
-      emailService
-        .sendVerificationEmail(email, verifyToken, landlord.fullName)
-        .then((result) => {
-          if (result.success) {
-            console.log("✅ Resend verification email sent to:", email);
-          } else {
-            console.error("❌ Resend email failed:", result.error);
-          }
-        })
-        .catch((error) => {
-          console.error("❌ Resend email error:", error.message);
+      // ✅ Send email with retry logic
+      const emailResult = await emailService.sendVerificationEmail(
+        email,
+        verifyToken,
+        landlord.fullName
+      );
+
+      if (!emailResult.success) {
+        console.error(
+          "❌ Resend verification failed after retries:",
+          emailResult.error
+        );
+        return res.status(500).json({
+          success: false,
+          message: "Failed to send verification code. Please try again later.",
         });
+      }
 
       res.json({
         success: true,
         message: "Verification code sent successfully",
+        data: {
+          emailSent: true,
+          verificationCode:
+            process.env.NODE_ENV === "development" ? verifyToken : undefined,
+        },
       });
     } catch (error) {
       console.error("Resend verification error:", error);
@@ -366,19 +444,25 @@ const authController = {
         },
       });
 
-      // ✅ Send email in background
-      emailService
-        .sendPasswordResetEmail(email, resetToken, landlord.fullName)
-        .then((result) => {
-          if (result.success) {
-            console.log("✅ Password reset email sent to:", email);
-          } else {
-            console.error("❌ Password reset email failed:", result.error);
-          }
-        })
-        .catch((error) => {
-          console.error("❌ Password reset email error:", error.message);
+      // ✅ Send email with retry logic
+      const emailResult = await emailService.sendPasswordResetEmail(
+        email,
+        resetToken,
+        landlord.fullName
+      );
+
+      if (!emailResult.success) {
+        console.error(
+          "❌ Password reset email failed after retries:",
+          emailResult.error
+        );
+        // Still return success to prevent email enumeration
+        return res.json({
+          success: true,
+          message:
+            "If an account exists with this email, a reset code has been sent",
         });
+      }
 
       res.json({
         success: true,
@@ -446,19 +530,22 @@ const authController = {
         },
       });
 
-      // ✅ Send confirmation email in background
-      emailService
-        .sendPasswordChangedEmail(landlord.email, landlord.fullName)
-        .then((result) => {
-          if (result.success) {
-            console.log("✅ Password changed email sent to:", landlord.email);
-          } else {
-            console.error("❌ Password changed email failed:", result.error);
-          }
-        })
-        .catch((error) => {
-          console.error("❌ Password changed email error:", error.message);
-        });
+      // ✅ Send confirmation email with retry logic
+      const emailResult = await emailService.sendPasswordChangedEmail(
+        landlord.email,
+        landlord.fullName
+      );
+
+      if (!emailResult.success) {
+        console.error(
+          "❌ Password changed email failed after retries:",
+          emailResult.error
+        );
+        // Still proceed with password reset
+        console.log(
+          "⚠️ Password reset successful but confirmation email failed"
+        );
+      }
 
       res.json({
         success: true,
@@ -522,7 +609,6 @@ const authController = {
       });
     }
   },
-  // ❌ REMOVED: logout and logoutAdmin functions - handled client-side
 };
 
 module.exports = authController;
