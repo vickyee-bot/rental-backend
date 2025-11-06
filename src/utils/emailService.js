@@ -1,11 +1,13 @@
 const nodemailer = require("nodemailer");
 
-console.log("📧 Gmail SMTP configuration check:");
+console.log("📧 Email Service Configuration:");
 console.log("SMTP_HOST:", process.env.SMTP_HOST);
 console.log("SMTP_USER:", process.env.SMTP_USER);
 console.log("SMTP_FROM:", process.env.SMTP_FROM);
+console.log("NODE_ENV:", process.env.NODE_ENV);
+console.log("SKIP_EMAILS:", process.env.SKIP_EMAILS);
 
-// Create transporter for Gmail with better configuration
+// ⚡ FASTER Transporter Configuration
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: process.env.SMTP_PORT,
@@ -14,24 +16,39 @@ const transporter = nodemailer.createTransport({
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
-  // Add connection timeout settings
-  connectionTimeout: 30000, // 30 seconds
-  greetingTimeout: 30000,
-  socketTimeout: 30000,
+  // ⚡ CRITICAL: Much faster timeouts for Render.com
+  connectionTimeout: 10000, // 10 seconds (was 30000)
+  greetingTimeout: 10000, // 10 seconds (was 30000)
+  socketTimeout: 10000, // 10 seconds (was 30000)
+  // Better handling for Render.com network issues
+  tls: {
+    rejectUnauthorized: false,
+  },
 });
 
-// Test the transporter configuration
+// Test the transporter configuration with timeout
 transporter.verify(function (error, success) {
   if (error) {
-    console.log("❌ Gmail configuration error:", error);
+    console.log("❌ Gmail configuration error:", error.message);
   } else {
     console.log("✅ Gmail SMTP is ready to send emails");
   }
 });
 
 const emailService = {
-  // Send verification email with retry logic
+  // 🚀 Send verification email with OPTIMIZED timeouts
   sendVerificationEmail: async (email, token, fullName, retryCount = 0) => {
+    // 🎯 DEVELOPMENT MODE: Skip real email sending for instant responses
+    if (
+      process.env.NODE_ENV === "development" ||
+      process.env.SKIP_EMAILS === "true"
+    ) {
+      console.log(`📧 [DEV MODE] Verification email to: ${email}`);
+      console.log(`📧 [DEV MODE] Verification Code: ${token}`);
+      console.log(`📧 [DEV MODE] Email would be sent to: ${fullName}`);
+      return { success: true, messageId: "dev-mode-skipped" };
+    }
+
     console.log(
       `📨 Attempting to send verification email to: ${email} (Attempt ${
         retryCount + 1
@@ -89,10 +106,11 @@ const emailService = {
 
     try {
       const emailPromise = transporter.sendMail(mailOptions);
+      // ⚡ FASTER TIMEOUT: 10 seconds instead of 30
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(
-          () => reject(new Error("Email sending timeout after 30 seconds")),
-          30000
+          () => reject(new Error("Email sending timeout after 10 seconds")),
+          10000
         );
       });
 
@@ -108,10 +126,10 @@ const emailService = {
         error.message
       );
 
-      // Retry logic - maximum 2 retries
-      if (retryCount < 2) {
-        console.log(`🔄 Retrying email send to ${email} in 5 seconds...`);
-        await new Promise((resolve) => setTimeout(resolve, 5000)); // Wait 5 seconds
+      // ⚡ OPTIMIZED RETRY: Only 1 retry with shorter delay
+      if (retryCount < 1) {
+        console.log(`🔄 Retrying email send to ${email} in 2 seconds...`);
+        await new Promise((resolve) => setTimeout(resolve, 2000)); // 2 seconds instead of 5
         return emailService.sendVerificationEmail(
           email,
           token,
@@ -129,8 +147,18 @@ const emailService = {
     }
   },
 
-  // Send password reset email with retry logic
+  // 🚀 Send password reset email with OPTIMIZED timeouts
   sendPasswordResetEmail: async (email, token, fullName, retryCount = 0) => {
+    // 🎯 DEVELOPMENT MODE: Skip real email sending
+    if (
+      process.env.NODE_ENV === "development" ||
+      process.env.SKIP_EMAILS === "true"
+    ) {
+      console.log(`📧 [DEV MODE] Password reset email to: ${email}`);
+      console.log(`📧 [DEV MODE] Reset Code: ${token}`);
+      return { success: true, messageId: "dev-mode-skipped" };
+    }
+
     console.log(
       `📨 Attempting to send password reset email to: ${email} (Attempt ${
         retryCount + 1
@@ -169,9 +197,17 @@ const emailService = {
     };
 
     try {
-      const info = await transporter.sendMail(mailOptions);
+      // ⚡ FASTER TIMEOUT: 10 seconds
+      const emailPromise = transporter.sendMail(mailOptions);
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(
+          () => reject(new Error("Email sending timeout after 10 seconds")),
+          10000
+        );
+      });
+
+      const info = await Promise.race([emailPromise, timeoutPromise]);
       console.log("✅ Password reset email sent successfully to:", email);
-      console.log("📤 Message ID:", info.messageId);
       return { success: true, messageId: info.messageId };
     } catch (error) {
       console.error(
@@ -181,12 +217,12 @@ const emailService = {
         error.message
       );
 
-      // Retry logic - maximum 2 retries
-      if (retryCount < 2) {
+      // ⚡ OPTIMIZED RETRY: Only 1 retry with shorter delay
+      if (retryCount < 1) {
         console.log(
-          `🔄 Retrying password reset email to ${email} in 5 seconds...`
+          `🔄 Retrying password reset email to ${email} in 2 seconds...`
         );
-        await new Promise((resolve) => setTimeout(resolve, 5000));
+        await new Promise((resolve) => setTimeout(resolve, 2000));
         return emailService.sendPasswordResetEmail(
           email,
           token,
@@ -206,8 +242,17 @@ const emailService = {
     }
   },
 
-  // Send password changed confirmation with retry logic
+  // 🚀 Send password changed confirmation with OPTIMIZED timeouts
   sendPasswordChangedEmail: async (email, fullName, retryCount = 0) => {
+    // 🎯 DEVELOPMENT MODE: Skip real email sending
+    if (
+      process.env.NODE_ENV === "development" ||
+      process.env.SKIP_EMAILS === "true"
+    ) {
+      console.log(`📧 [DEV MODE] Password changed email to: ${email}`);
+      return { success: true, messageId: "dev-mode-skipped" };
+    }
+
     console.log(
       `📨 Attempting to send password changed email to: ${email} (Attempt ${
         retryCount + 1
@@ -244,9 +289,17 @@ const emailService = {
     };
 
     try {
-      const info = await transporter.sendMail(mailOptions);
+      // ⚡ FASTER TIMEOUT: 10 seconds
+      const emailPromise = transporter.sendMail(mailOptions);
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(
+          () => reject(new Error("Email sending timeout after 10 seconds")),
+          10000
+        );
+      });
+
+      const info = await Promise.race([emailPromise, timeoutPromise]);
       console.log("✅ Password changed email sent successfully to:", email);
-      console.log("📤 Message ID:", info.messageId);
       return { success: true, messageId: info.messageId };
     } catch (error) {
       console.error(
@@ -256,12 +309,12 @@ const emailService = {
         error.message
       );
 
-      // Retry logic - maximum 2 retries
-      if (retryCount < 2) {
+      // ⚡ OPTIMIZED RETRY: Only 1 retry with shorter delay
+      if (retryCount < 1) {
         console.log(
-          `🔄 Retrying password changed email to ${email} in 5 seconds...`
+          `🔄 Retrying password changed email to ${email} in 2 seconds...`
         );
-        await new Promise((resolve) => setTimeout(resolve, 5000));
+        await new Promise((resolve) => setTimeout(resolve, 2000));
         return emailService.sendPasswordChangedEmail(
           email,
           fullName,

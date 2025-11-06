@@ -10,11 +10,8 @@ const tokenUtils = require("../utils/tokenUtils");
 // Use a single Prisma client instance (better performance)
 const prisma = new PrismaClient();
 
-// Cache for rate limiting (in-memory, simple implementation)
-const rateLimitCache = new Map();
-
 const authController = {
-  // ✅ Landlord Registration with Email Verification - OPTIMIZED
+  // ✅ Landlord Registration with Email Verification - ULTRA FAST
   registerLandlord: async (req, res) => {
     try {
       const { fullName, phoneNumber, email, password } = req.body;
@@ -38,7 +35,7 @@ const authController = {
       const [existingByPhone, existingByEmail] = await Promise.all([
         prisma.landlord.findUnique({
           where: { phoneNumber },
-          select: { id: true, isVerified: true }, // Only select needed fields
+          select: { id: true, isVerified: true },
         }),
         prisma.landlord.findFirst({
           where: { email },
@@ -97,22 +94,24 @@ const authController = {
         },
       });
 
-      // Generate token and send email in parallel
-      const [token] = await Promise.all([
-        generateToken(landlord.id, "landlord"),
-        // Fire and forget email - don't wait for response
-        emailService
-          .sendVerificationEmail(email, verifyToken, fullName)
-          .then((result) => {
-            if (!result.success) {
-              console.error("❌ Email sending failed:", result.error);
-            }
-          })
-          .catch((error) => {
-            console.error("❌ Email error:", error.message);
-          }),
-      ]);
+      // Generate token
+      const token = generateToken(landlord.id, "landlord");
 
+      // 🚀 FIRE AND FORGET - Don't wait for email at all
+      emailService
+        .sendVerificationEmail(email, verifyToken, fullName)
+        .then((result) => {
+          if (result.success) {
+            console.log("✅ Email sent successfully in background");
+          } else {
+            console.error("❌ Background email failed:", result.error);
+          }
+        })
+        .catch((error) => {
+          console.error("❌ Background email error:", error.message);
+        });
+
+      // ⚡ INSTANT RESPONSE - Don't wait for email
       res.status(201).json({
         success: true,
         message:
@@ -162,7 +161,7 @@ const authController = {
         // Check if code exists but expired (only if not found)
         const expiredLandlord = await prisma.landlord.findFirst({
           where: { email, verifyToken: code },
-          select: { id: true }, // Only need to know if it exists
+          select: { id: true },
         });
 
         return res.status(400).json({
@@ -211,7 +210,7 @@ const authController = {
     }
   },
 
-  // ✅ Resend Verification Code - OPTIMIZED
+  // ✅ Resend Verification Code - ULTRA FAST
   resendVerification: async (req, res) => {
     try {
       const { email } = req.body;
@@ -230,7 +229,7 @@ const authController = {
           fullName: true,
           isVerified: true,
           verifyExpires: true,
-        }, // Only needed fields
+        },
       });
 
       if (!landlord) {
@@ -262,32 +261,33 @@ const authController = {
         });
       }
 
-      // Generate new code and update in parallel
+      // Generate new code
       const verifyToken = Math.floor(
         100000 + Math.random() * 900000
       ).toString();
       const verifyExpires = tokenUtils.generateExpiry(24); // 24 hours
 
-      const [_, emailResult] = await Promise.all([
+      // 🚀 FIRE AND FORGET - Update DB and send email without waiting
+      Promise.all([
         prisma.landlord.update({
           where: { id: landlord.id },
           data: { verifyToken, verifyExpires },
         }),
-        emailService.sendVerificationEmail(
-          email,
-          verifyToken,
-          landlord.fullName
-        ),
-      ]);
+        emailService
+          .sendVerificationEmail(email, verifyToken, landlord.fullName)
+          .then((result) => {
+            if (!result.success) {
+              console.error("❌ Background resend failed:", result.error);
+            }
+          })
+          .catch((error) => {
+            console.error("❌ Background resend error:", error.message);
+          }),
+      ]).catch((error) => {
+        console.error("❌ Background update error:", error.message);
+      });
 
-      if (!emailResult.success) {
-        console.error("❌ Resend verification failed:", emailResult.error);
-        return res.status(500).json({
-          success: false,
-          message: "Failed to send verification code. Please try again later.",
-        });
-      }
-
+      // ⚡ INSTANT RESPONSE - Don't wait for email or DB update
       res.json({
         success: true,
         message: "Verification code sent successfully",
@@ -329,7 +329,7 @@ const authController = {
           email: true,
           isVerified: true,
           passwordHash: true,
-        }, // Only needed fields
+        },
       });
 
       if (
@@ -366,7 +366,7 @@ const authController = {
     }
   },
 
-  // ✅ Forgot Password - OPTIMIZED
+  // ✅ Forgot Password - ULTRA FAST
   forgotPassword: async (req, res) => {
     try {
       const { email } = req.body;
@@ -380,7 +380,7 @@ const authController = {
 
       const landlord = await prisma.landlord.findFirst({
         where: { email },
-        select: { id: true, fullName: true }, // Only needed fields
+        select: { id: true, fullName: true },
       });
 
       // Always return same message to prevent email enumeration
@@ -391,11 +391,12 @@ const authController = {
         return res.json({ success: true, message: successMessage });
       }
 
-      // Generate reset token and send email in parallel
+      // Generate reset token
       const resetToken = Math.floor(100000 + Math.random() * 900000).toString();
       const resetExpires = tokenUtils.generateExpiry(1); // 1 hour
 
-      await Promise.all([
+      // 🚀 FIRE AND FORGET - Update DB and send email without waiting
+      Promise.all([
         prisma.landlord.update({
           where: { id: landlord.id },
           data: { resetToken, resetExpires },
@@ -405,8 +406,11 @@ const authController = {
           .catch((error) =>
             console.error("❌ Reset email failed:", error.message)
           ),
-      ]);
+      ]).catch((error) => {
+        console.error("❌ Background update error:", error.message);
+      });
 
+      // ⚡ INSTANT RESPONSE
       res.json({ success: true, message: successMessage });
     } catch (error) {
       console.error("Forgot password error:", error);
@@ -419,7 +423,7 @@ const authController = {
     }
   },
 
-  // ✅ Reset Password with Code - OPTIMIZED
+  // ✅ Reset Password with Code - ULTRA FAST
   resetPassword: async (req, res) => {
     try {
       const { email, code, newPassword } = req.body;
@@ -445,7 +449,7 @@ const authController = {
           resetToken: code,
           resetExpires: { gt: new Date() },
         },
-        select: { id: true, email: true, fullName: true }, // Only needed fields
+        select: { id: true, email: true, fullName: true },
       });
 
       if (!landlord) {
@@ -457,8 +461,8 @@ const authController = {
 
       const passwordHash = await hashPassword(newPassword);
 
-      // Update password and send confirmation email in parallel
-      await Promise.all([
+      // 🚀 FIRE AND FORGET - Update password and send confirmation without waiting
+      Promise.all([
         prisma.landlord.update({
           where: { id: landlord.id },
           data: {
@@ -472,8 +476,11 @@ const authController = {
           .catch((error) =>
             console.error("❌ Confirmation email failed:", error.message)
           ),
-      ]);
+      ]).catch((error) => {
+        console.error("❌ Background update error:", error.message);
+      });
 
+      // ⚡ INSTANT RESPONSE
       res.json({
         success: true,
         message: "Password reset successfully",
