@@ -27,7 +27,7 @@ const unitController = {
       // Check if property exists and belongs to landlord
       const property = await prisma.property.findFirst({
         where: {
-          id: parseInt(propertyId),
+          id: propertyId, // UUID string (no parseInt needed)
           landlordId: req.user.id,
         },
       });
@@ -57,7 +57,7 @@ const unitController = {
           size: size || null,
           status,
           imageUrls: imageUrls.map((img) => img.url), // Store only URLs in database
-          propertyId: parseInt(propertyId),
+          propertyId: propertyId, // UUID string
         },
         include: {
           property: {
@@ -68,9 +68,6 @@ const unitController = {
           },
         },
       });
-
-      // Store Cloudinary public_ids separately if needed
-      // You can create a separate table for image metadata if required
 
       res.status(201).json({
         success: true,
@@ -100,7 +97,7 @@ const unitController = {
       // Check if unit exists and belongs to landlord
       const existingUnit = await prisma.unit.findFirst({
         where: {
-          id: parseInt(id),
+          id: id, // UUID string (no parseInt needed)
           property: {
             landlordId: req.user.id,
           },
@@ -126,7 +123,7 @@ const unitController = {
 
       // Update unit
       const unit = await prisma.unit.update({
-        where: { id: parseInt(id) },
+        where: { id: id }, // UUID string
         data: {
           name: name || existingUnit.name,
           rent: rent ? parseFloat(rent) : existingUnit.rent,
@@ -173,7 +170,7 @@ const unitController = {
       // Check if unit exists and belongs to landlord
       const unit = await prisma.unit.findFirst({
         where: {
-          id: parseInt(id),
+          id: id, // UUID string (no parseInt needed)
           property: {
             landlordId: req.user.id,
           },
@@ -187,20 +184,9 @@ const unitController = {
         });
       }
 
-      // TODO: Implement Cloudinary image deletion if you stored public_ids
-      // if (unit.imageUrls && unit.imageUrls.length > 0) {
-      //   // Extract public_ids and delete from Cloudinary
-      //   const publicIds = unit.imageUrls.map(url => {
-      //     // Extract public_id from Cloudinary URL
-      //     const parts = url.split('/');
-      //     return parts[parts.length - 1].split('.')[0];
-      //   });
-      //   await cloudinaryUtils.deleteMultipleImages(publicIds);
-      // }
-
       // Delete unit
       await prisma.unit.delete({
-        where: { id: parseInt(id) },
+        where: { id: id }, // UUID string
       });
 
       res.json({
@@ -218,13 +204,13 @@ const unitController = {
     }
   },
 
-  // Get Units (unchanged)
+  // Get Units
   getUnits: async (req, res) => {
     try {
       const units = await prisma.unit.findMany({
         where: {
           property: {
-            landlordId: req.user.id,
+            landlordId: req.user.id, // UUID string
           },
         },
         include: {
@@ -262,7 +248,7 @@ const unitController = {
 
       const unit = await prisma.unit.findFirst({
         where: {
-          id: parseInt(id),
+          id: id, // UUID string (no parseInt needed)
           property: {
             landlordId: req.user.id,
           },
@@ -316,7 +302,7 @@ const unitController = {
 
       const unit = await prisma.unit.findFirst({
         where: {
-          id: parseInt(id),
+          id: id, // UUID string (no parseInt needed)
           property: {
             landlordId: req.user.id,
           },
@@ -331,7 +317,7 @@ const unitController = {
       }
 
       const updatedUnit = await prisma.unit.update({
-        where: { id: parseInt(id) },
+        where: { id: id }, // UUID string
         data: { status },
         include: {
           property: {

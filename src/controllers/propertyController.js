@@ -7,7 +7,7 @@ const propertyController = {
   getProperties: async (req, res) => {
     try {
       const properties = await prisma.property.findMany({
-        where: { landlordId: req.user.id },
+        where: { landlordId: req.user.id }, // UUID string
         include: {
           units: {
             select: {
@@ -47,7 +47,7 @@ const propertyController = {
           electricityPrice: electricityPrice
             ? parseFloat(electricityPrice)
             : null,
-          landlordId: req.user.id,
+          landlordId: req.user.id, // UUID string
         },
       });
 
@@ -73,7 +73,7 @@ const propertyController = {
 
       // Verify property belongs to landlord
       const existingProperty = await prisma.property.findFirst({
-        where: { id: parseInt(id), landlordId: req.user.id },
+        where: { id: id, landlordId: req.user.id }, // UUID strings
       });
 
       if (!existingProperty) {
@@ -84,7 +84,7 @@ const propertyController = {
       }
 
       const property = await prisma.property.update({
-        where: { id: parseInt(id) },
+        where: { id: id }, // UUID string
         data: {
           name,
           location,
@@ -116,7 +116,7 @@ const propertyController = {
 
       // Verify property belongs to landlord
       const existingProperty = await prisma.property.findFirst({
-        where: { id: parseInt(id), landlordId: req.user.id },
+        where: { id: id, landlordId: req.user.id }, // UUID strings
       });
 
       if (!existingProperty) {
@@ -127,7 +127,7 @@ const propertyController = {
       }
 
       await prisma.property.delete({
-        where: { id: parseInt(id) },
+        where: { id: id }, // UUID string
       });
 
       res.json({

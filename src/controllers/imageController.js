@@ -11,7 +11,7 @@ const imageController = {
 
       const unit = await prisma.unit.findFirst({
         where: {
-          id: parseInt(unitId),
+          id: unitId, // UUID string (no parseInt needed)
           property: {
             landlordId: req.user.id,
           },
@@ -29,7 +29,7 @@ const imageController = {
       const updatedImageUrls = unit.imageUrls.filter((url) => url !== imageUrl);
 
       await prisma.unit.update({
-        where: { id: parseInt(unitId) },
+        where: { id: unitId }, // UUID string
         data: { imageUrls: updatedImageUrls },
       });
 
@@ -59,7 +59,7 @@ const imageController = {
 
       const unit = await prisma.unit.findFirst({
         where: {
-          id: parseInt(unitId),
+          id: unitId, // UUID string (no parseInt needed)
           property: {
             landlordId: req.user.id,
           },
@@ -84,7 +84,7 @@ const imageController = {
       const updatedImageUrls = [...unit.imageUrls, ...newImageUrls];
 
       const updatedUnit = await prisma.unit.update({
-        where: { id: parseInt(unitId) },
+        where: { id: unitId }, // UUID string
         data: { imageUrls: updatedImageUrls },
         include: {
           property: {

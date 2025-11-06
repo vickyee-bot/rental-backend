@@ -292,7 +292,7 @@ const adminController = {
       const { id } = req.params;
 
       const property = await prisma.property.findUnique({
-        where: { id: parseInt(id) },
+        where: { id: id }, // UUID string (no parseInt needed)
         include: {
           landlord: {
             select: {
@@ -426,7 +426,7 @@ const adminController = {
 
       // Verify unit exists and is vacant
       const unit = await prisma.unit.findUnique({
-        where: { id: parseInt(unitId) },
+        where: { id: unitId }, // UUID string (no parseInt needed)
         include: {
           property: {
             select: {
@@ -453,8 +453,8 @@ const adminController = {
 
       const referral = await prisma.referral.create({
         data: {
-          adminId: req.admin.id,
-          unitId: parseInt(unitId),
+          adminId: req.admin.id, // UUID string
+          unitId: unitId, // UUID string
           clientName,
           clientPhone,
           clientEmail,
@@ -557,7 +557,7 @@ const adminController = {
       }
 
       const referral = await prisma.referral.update({
-        where: { id: parseInt(id) },
+        where: { id: id }, // UUID string (no parseInt needed)
         data: { status },
         include: {
           unit: {

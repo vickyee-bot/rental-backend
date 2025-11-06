@@ -10,31 +10,16 @@ const tokenUtils = require("../utils/tokenUtils");
 const prisma = new PrismaClient();
 
 const authController = {
-  // ✅ Landlord Registration with Email Verification (Mobile App) - UPDATED
+  // ✅ Landlord Registration with Email Verification (Mobile App)
   registerLandlord: async (req, res) => {
     try {
-      const { fullName, phoneNumber, email, password, confirmPassword } =
-        req.body;
+      const { fullName, phoneNumber, email, password } = req.body;
 
       // Validate required fields
-      if (
-        !fullName ||
-        !phoneNumber ||
-        !email ||
-        !password ||
-        !confirmPassword
-      ) {
+      if (!fullName || !phoneNumber || !email || !password) {
         return res.status(400).json({
           success: false,
           message: "All fields are required",
-        });
-      }
-
-      // Check if passwords match
-      if (password !== confirmPassword) {
-        return res.status(400).json({
-          success: false,
-          message: "Passwords do not match",
         });
       }
 
@@ -105,7 +90,7 @@ const authController = {
       // Generate temporary token
       const token = generateToken(landlord.id, "landlord");
 
-      // ✅ CRITICAL FIX: Send email in background without waiting for response
+      // ✅ Send email in background without waiting for response
       emailService
         .sendVerificationEmail(email, verifyToken, fullName)
         .then((result) => {
@@ -119,7 +104,7 @@ const authController = {
           console.error("❌ Background email error:", error.message);
         });
 
-      // ✅ CRITICAL FIX: Respond immediately without waiting for email
+      // ✅ Respond immediately without waiting for email
       res.status(201).json({
         success: true,
         message:
@@ -210,7 +195,7 @@ const authController = {
     }
   },
 
-  // ✅ Resend Verification Code (Mobile App) - UPDATED
+  // ✅ Resend Verification Code (Mobile App)
   resendVerification: async (req, res) => {
     try {
       const { email } = req.body;
@@ -258,7 +243,7 @@ const authController = {
         },
       });
 
-      // ✅ FIX: Send email in background
+      // ✅ Send email in background
       emailService
         .sendVerificationEmail(email, verifyToken, landlord.fullName)
         .then((result) => {
@@ -340,7 +325,7 @@ const authController = {
     }
   },
 
-  // ✅ Forgot Password - Send Reset Code (Mobile App) - UPDATED
+  // ✅ Forgot Password - Send Reset Code (Mobile App)
   forgotPassword: async (req, res) => {
     try {
       const { email } = req.body;
@@ -381,7 +366,7 @@ const authController = {
         },
       });
 
-      // ✅ FIX: Send email in background
+      // ✅ Send email in background
       emailService
         .sendPasswordResetEmail(email, resetToken, landlord.fullName)
         .then((result) => {
@@ -414,19 +399,12 @@ const authController = {
   // ✅ Reset Password with Code (Mobile App)
   resetPassword: async (req, res) => {
     try {
-      const { email, code, newPassword, confirmPassword } = req.body;
+      const { email, code, newPassword } = req.body;
 
-      if (!email || !code || !newPassword || !confirmPassword) {
+      if (!email || !code || !newPassword) {
         return res.status(400).json({
           success: false,
-          message: "All fields are required",
-        });
-      }
-
-      if (newPassword !== confirmPassword) {
-        return res.status(400).json({
-          success: false,
-          message: "Passwords do not match",
+          message: "Email, code, and new password are required",
         });
       }
 
@@ -468,7 +446,7 @@ const authController = {
         },
       });
 
-      // ✅ FIX: Send confirmation email in background
+      // ✅ Send confirmation email in background
       emailService
         .sendPasswordChangedEmail(landlord.email, landlord.fullName)
         .then((result) => {
@@ -493,22 +471,6 @@ const authController = {
         message: "Error resetting password",
         error:
           process.env.NODE_ENV === "development" ? error.message : undefined,
-      });
-    }
-  },
-
-  // ✅ Logout (Mobile App)
-  logout: async (req, res) => {
-    try {
-      res.json({
-        success: true,
-        message: "Logged out successfully",
-      });
-    } catch (error) {
-      console.error("Logout error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Error during logout",
       });
     }
   },
@@ -560,22 +522,7 @@ const authController = {
       });
     }
   },
-
-  // ✅ Admin Logout
-  logoutAdmin: async (req, res) => {
-    try {
-      res.json({
-        success: true,
-        message: "Admin logged out successfully",
-      });
-    } catch (error) {
-      console.error("Admin logout error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Error during admin logout",
-      });
-    }
-  },
+  // ❌ REMOVED: logout and logoutAdmin functions - handled client-side
 };
 
 module.exports = authController;
