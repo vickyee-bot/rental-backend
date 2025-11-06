@@ -193,6 +193,7 @@ const authController = {
           landlord: {
             id: landlord.id,
             fullName: landlord.fullName,
+            phoneNumber: landlord.phoneNumber, // ✅ Added phoneNumber
             email: landlord.email,
             isVerified: true,
           },
