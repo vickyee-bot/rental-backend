@@ -84,7 +84,7 @@ const emailService = {
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(
           () => reject(new Error("Email sending timeout after 15 seconds")),
-          15000
+          30000
         );
       });
 
