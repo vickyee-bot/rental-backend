@@ -1,6 +1,4 @@
 const { PrismaClient } = require("@prisma/client");
-const { cloudinaryUtils } = require("../utils/cloudinary");
-
 const prisma = new PrismaClient();
 
 const unitController = {
@@ -24,10 +22,20 @@ const unitController = {
         });
       }
 
+      // Validate UUID format
+      const uuidRegex =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(propertyId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid property ID format",
+        });
+      }
+
       // Check if property exists and belongs to landlord
       const property = await prisma.property.findFirst({
         where: {
-          id: propertyId, // UUID string (no parseInt needed)
+          id: propertyId,
           landlordId: req.user.id,
         },
       });
@@ -42,10 +50,7 @@ const unitController = {
       // Process uploaded images
       let imageUrls = [];
       if (req.files && req.files.length > 0) {
-        imageUrls = req.files.map((file) => ({
-          url: file.path, // Cloudinary URL
-          public_id: file.filename, // Cloudinary public_id
-        }));
+        imageUrls = req.files.map((file) => file.path);
       }
 
       // Create unit
@@ -56,8 +61,8 @@ const unitController = {
           deposit: deposit ? parseFloat(deposit) : null,
           size: size || null,
           status,
-          imageUrls: imageUrls.map((img) => img.url), // Store only URLs in database
-          propertyId: propertyId, // UUID string
+          imageUrls,
+          propertyId,
         },
         include: {
           property: {
@@ -72,10 +77,7 @@ const unitController = {
       res.status(201).json({
         success: true,
         message: "Unit created successfully",
-        data: {
-          unit,
-          images: imageUrls, // Return image info including public_ids
-        },
+        data: unit,
       });
     } catch (error) {
       console.error("Create unit error:", error);
@@ -94,10 +96,20 @@ const unitController = {
       const { id } = req.params;
       const { name, rent, deposit, size, status } = req.body;
 
+      // Validate UUID format
+      const uuidRegex =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(id)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid unit ID format",
+        });
+      }
+
       // Check if unit exists and belongs to landlord
       const existingUnit = await prisma.unit.findFirst({
         where: {
-          id: id, // UUID string (no parseInt needed)
+          id,
           property: {
             landlordId: req.user.id,
           },
@@ -123,7 +135,7 @@ const unitController = {
 
       // Update unit
       const unit = await prisma.unit.update({
-        where: { id: id }, // UUID string
+        where: { id },
         data: {
           name: name || existingUnit.name,
           rent: rent ? parseFloat(rent) : existingUnit.rent,
@@ -146,10 +158,7 @@ const unitController = {
       res.json({
         success: true,
         message: "Unit updated successfully",
-        data: {
-          unit,
-          newImages: req.files ? req.files.map((file) => file.path) : [],
-        },
+        data: unit,
       });
     } catch (error) {
       console.error("Update unit error:", error);
@@ -162,15 +171,25 @@ const unitController = {
     }
   },
 
-  // Delete Unit with Image Cleanup
+  // Delete Unit
   deleteUnit: async (req, res) => {
     try {
       const { id } = req.params;
 
+      // Validate UUID format
+      const uuidRegex =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(id)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid unit ID format",
+        });
+      }
+
       // Check if unit exists and belongs to landlord
       const unit = await prisma.unit.findFirst({
         where: {
-          id: id, // UUID string (no parseInt needed)
+          id,
           property: {
             landlordId: req.user.id,
           },
@@ -184,9 +203,8 @@ const unitController = {
         });
       }
 
-      // Delete unit
       await prisma.unit.delete({
-        where: { id: id }, // UUID string
+        where: { id },
       });
 
       res.json({
@@ -204,31 +222,57 @@ const unitController = {
     }
   },
 
-  // Get Units
+  // Get Units with Pagination
   getUnits: async (req, res) => {
     try {
-      const units = await prisma.unit.findMany({
-        where: {
-          property: {
-            landlordId: req.user.id, // UUID string
-          },
+      const { page = 1, limit = 10, propertyId, status } = req.query;
+      const skip = (parseInt(page) - 1) * parseInt(limit);
+
+      const where = {
+        property: {
+          landlordId: req.user.id,
         },
-        include: {
-          property: {
-            select: {
-              name: true,
-              location: true,
+      };
+
+      // Add filters if provided
+      if (propertyId) {
+        where.propertyId = propertyId;
+      }
+      if (status) {
+        where.status = status;
+      }
+
+      const [units, total] = await Promise.all([
+        prisma.unit.findMany({
+          where,
+          include: {
+            property: {
+              select: {
+                name: true,
+                location: true,
+              },
             },
           },
-        },
-        orderBy: {
-          createdAt: "desc",
-        },
-      });
+          skip,
+          take: parseInt(limit),
+          orderBy: {
+            createdAt: "desc",
+          },
+        }),
+        prisma.unit.count({ where }),
+      ]);
 
       res.json({
         success: true,
-        data: units,
+        data: {
+          units,
+          pagination: {
+            currentPage: parseInt(page),
+            totalPages: Math.ceil(total / parseInt(limit)),
+            totalItems: total,
+            itemsPerPage: parseInt(limit),
+          },
+        },
       });
     } catch (error) {
       console.error("Get units error:", error);
@@ -246,9 +290,19 @@ const unitController = {
     try {
       const { id } = req.params;
 
+      // Validate UUID format
+      const uuidRegex =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(id)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid unit ID format",
+        });
+      }
+
       const unit = await prisma.unit.findFirst({
         where: {
-          id: id, // UUID string (no parseInt needed)
+          id,
           property: {
             landlordId: req.user.id,
           },
@@ -293,6 +347,16 @@ const unitController = {
       const { id } = req.params;
       const { status } = req.body;
 
+      // Validate UUID format
+      const uuidRegex =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(id)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid unit ID format",
+        });
+      }
+
       if (!status || !["Vacant", "Occupied"].includes(status)) {
         return res.status(400).json({
           success: false,
@@ -302,7 +366,7 @@ const unitController = {
 
       const unit = await prisma.unit.findFirst({
         where: {
-          id: id, // UUID string (no parseInt needed)
+          id,
           property: {
             landlordId: req.user.id,
           },
@@ -317,7 +381,7 @@ const unitController = {
       }
 
       const updatedUnit = await prisma.unit.update({
-        where: { id: id }, // UUID string
+        where: { id },
         data: { status },
         include: {
           property: {

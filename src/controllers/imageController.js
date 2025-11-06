@@ -1,6 +1,4 @@
 const { PrismaClient } = require("@prisma/client");
-const { cloudinaryUtils } = require("../utils/cloudinary");
-
 const prisma = new PrismaClient();
 
 const imageController = {
@@ -9,9 +7,19 @@ const imageController = {
     try {
       const { unitId, imageUrl } = req.body;
 
+      // Validate UUID format
+      const uuidRegex =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(unitId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid unit ID format",
+        });
+      }
+
       const unit = await prisma.unit.findFirst({
         where: {
-          id: unitId, // UUID string (no parseInt needed)
+          id: unitId,
           property: {
             landlordId: req.user.id,
           },
@@ -29,13 +37,9 @@ const imageController = {
       const updatedImageUrls = unit.imageUrls.filter((url) => url !== imageUrl);
 
       await prisma.unit.update({
-        where: { id: unitId }, // UUID string
+        where: { id: unitId },
         data: { imageUrls: updatedImageUrls },
       });
-
-      // TODO: Delete from Cloudinary if you have public_id
-      // const publicId = extractPublicId(imageUrl);
-      // await cloudinaryUtils.deleteImage(publicId);
 
       res.json({
         success: true,
@@ -57,9 +61,19 @@ const imageController = {
     try {
       const { unitId } = req.body;
 
+      // Validate UUID format
+      const uuidRegex =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(unitId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid unit ID format",
+        });
+      }
+
       const unit = await prisma.unit.findFirst({
         where: {
-          id: unitId, // UUID string (no parseInt needed)
+          id: unitId,
           property: {
             landlordId: req.user.id,
           },
@@ -84,7 +98,7 @@ const imageController = {
       const updatedImageUrls = [...unit.imageUrls, ...newImageUrls];
 
       const updatedUnit = await prisma.unit.update({
-        where: { id: unitId }, // UUID string
+        where: { id: unitId },
         data: { imageUrls: updatedImageUrls },
         include: {
           property: {
