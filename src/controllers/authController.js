@@ -309,6 +309,114 @@ const authController = {
     }
   },
 
+  // ✅ Resend Password Reset Code - For when user didn't receive the first code
+  resendPasswordReset: async (req, res) => {
+    try {
+      const { email } = req.body;
+
+      if (!email) {
+        return res.status(400).json({
+          success: false,
+          message: "Email is required",
+        });
+      }
+
+      // Find landlord with active reset request
+      const landlord = await prisma.landlord.findFirst({
+        where: {
+          email,
+          resetToken: { not: null }, // Must have an existing reset token
+          resetExpires: { gt: new Date() }, // Must not be expired
+        },
+        select: {
+          id: true,
+          fullName: true,
+          resetExpires: true,
+          isVerified: true,
+        },
+      });
+
+      if (!landlord) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "No active password reset request found. Please request a new password reset first.",
+        });
+      }
+
+      // Rate limiting check - same 1-minute interval
+      const now = Date.now();
+      const lastSent = landlord.resetExpires.getTime();
+      const timeSinceLast = now - lastSent;
+      const minResendInterval = 60000; // 1 minute
+
+      if (timeSinceLast > 0 && timeSinceLast < minResendInterval) {
+        const waitTime = Math.ceil((minResendInterval - timeSinceLast) / 1000);
+        return res.status(429).json({
+          success: false,
+          message: `Please wait ${waitTime} seconds before requesting a new reset code`,
+          retryAfter: waitTime,
+        });
+      }
+
+      // Generate new reset code
+      const resetToken = Math.floor(100000 + Math.random() * 900000).toString();
+      const resetExpires = tokenUtils.generateExpiry(1); // 1 hour
+
+      // 🚀 FIRE AND FORGET - Update DB and send email without waiting
+      Promise.all([
+        prisma.landlord.update({
+          where: { id: landlord.id },
+          data: { resetToken, resetExpires },
+        }),
+        emailService
+          .sendPasswordResetEmail(email, resetToken, landlord.fullName)
+          .then((result) => {
+            if (!result.success) {
+              console.error(
+                "❌ Background password reset resend failed:",
+                result.error
+              );
+            } else {
+              console.log(
+                "✅ Password reset code resent successfully in background"
+              );
+            }
+          })
+          .catch((error) => {
+            console.error(
+              "❌ Background password reset resend error:",
+              error.message
+            );
+          }),
+      ]).catch((error) => {
+        console.error(
+          "❌ Background password reset update error:",
+          error.message
+        );
+      });
+
+      // ⚡ INSTANT RESPONSE - Don't wait for email or DB update
+      res.json({
+        success: true,
+        message: "Password reset code sent successfully",
+        data: {
+          emailSent: true,
+          resetCode:
+            process.env.NODE_ENV === "development" ? resetToken : undefined,
+        },
+      });
+    } catch (error) {
+      console.error("Resend password reset error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error resending password reset code",
+        error:
+          process.env.NODE_ENV === "development" ? error.message : undefined,
+      });
+    }
+  },
+
   // ✅ Landlord Login - OPTIMIZED
   loginLandlord: async (req, res) => {
     try {

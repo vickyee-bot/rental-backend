@@ -8,6 +8,7 @@ const router = express.Router();
 router.post("/register-landlord", authController.registerLandlord);
 router.post("/verify-email", authController.verifyEmail);
 router.post("/resend-verification", authController.resendVerification);
+router.post("/resend-password-reset", authController.resendPasswordReset);
 router.post("/login-landlord", authController.loginLandlord);
 router.post("/forgot-password", authController.forgotPassword);
 router.post("/reset-password", authController.resetPassword);
