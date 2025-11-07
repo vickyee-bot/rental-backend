@@ -20,7 +20,7 @@ app.use(
     origin: [
       "https://your-frontend-domain.com",
       "https://your-mobile-app.com",
-      "http://localhost:5432", // For local development
+      "http://localhost:5173", // For local development
     ],
     credentials: true,
   })

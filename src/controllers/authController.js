@@ -4,7 +4,7 @@ const {
   comparePassword,
   generateToken,
 } = require("../utils/auth");
-const emailService = require("../utils/emailService");
+const emailService = require("../utils/resendService");
 const tokenUtils = require("../utils/tokenUtils");
 
 // Use a single Prisma client instance (better performance)
