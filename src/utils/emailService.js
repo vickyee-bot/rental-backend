@@ -10,35 +10,11 @@ console.log("SKIP_EMAILS:", process.env.SKIP_EMAILS);
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT) || 587,
-  secure: process.env.SMTP_PORT === "465",
+  secure: false,
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
-  connectionTimeout: 15000,
-  greetingTimeout: 15000,
-  socketTimeout: 15000,
-  tls: {
-    rejectUnauthorized: process.env.NODE_ENV === "production",
-  },
-});
-
-transporter.verify((error, success) => {
-  if (error) {
-    console.log("SMTP Connection Error:", {
-      message: error.message,
-      code: error.code,
-      command: error.command,
-    });
-
-    if (error.code === "EAUTH") {
-      console.log("AUTH ERROR: Check your email credentials or app password.");
-    } else if (error.code === "ECONNECTION") {
-      console.log("CONNECTION ERROR: Verify SMTP settings or port number.");
-    }
-  } else {
-    console.log("SMTP Connection Successful - Ready to send emails");
-  }
 });
 
 // Helper function for consistent email templates
