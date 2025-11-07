@@ -17,6 +17,24 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+transporter.verify((error, success) => {
+  if (error) {
+    console.log("SMTP Connection Error:", {
+      message: error.message,
+      code: error.code,
+      command: error.command,
+    });
+
+    if (error.code === "EAUTH") {
+      console.log("AUTH ERROR: Check your email credentials or app password.");
+    } else if (error.code === "ECONNECTION") {
+      console.log("CONNECTION ERROR: Verify SMTP settings or port number.");
+    }
+  } else {
+    console.log("SMTP Connection Successful - Ready to send emails");
+  }
+});
+
 // Helper function for consistent email templates
 const buildTemplate = (title, content) => `
   <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
