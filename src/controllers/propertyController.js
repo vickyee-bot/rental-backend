@@ -22,12 +22,21 @@ const propertyController = {
           where,
           include: {
             units: {
+              // ✅ Return ALL unit data
               select: {
                 id: true,
                 name: true,
                 rent: true,
+                deposit: true, // ✅ Added
+                size: true, // ✅ Added
                 status: true,
+                imageUrls: true, // ✅ Added
+                propertyId: true, // ✅ Added
+                createdAt: true, // ✅ Added
+                updatedAt: true, // ✅ Added
+                // referrals: true,   // ❌ Omit referrals to avoid circular references
               },
+              orderBy: { createdAt: "desc" }, // Optional: order units
             },
           },
           skip,
