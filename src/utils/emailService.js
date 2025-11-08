@@ -1,41 +1,28 @@
 const nodemailer = require("nodemailer");
 
+// Log environment info for debugging (optional)
 console.log("Email Service Configuration:");
-console.log("SMTP_HOST:", process.env.SMTP_HOST);
-console.log("SMTP_USER:", process.env.SMTP_USER);
-console.log("SMTP_FROM:", process.env.SMTP_FROM);
+console.log("EMAIL_USER:", process.env.EMAIL_USER);
 console.log("NODE_ENV:", process.env.NODE_ENV);
 console.log("SKIP_EMAILS:", process.env.SKIP_EMAILS);
 
 const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT) || 587,
-  secure: false,
+  service: "gmail", // use Gmail directly
   auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS, // App password (not normal Gmail password)
   },
 });
 
 transporter.verify((error, success) => {
   if (error) {
-    console.log("SMTP Connection Error:", {
-      message: error.message,
-      code: error.code,
-      command: error.command,
-    });
-
-    if (error.code === "EAUTH") {
-      console.log("AUTH ERROR: Check your email credentials or app password.");
-    } else if (error.code === "ECONNECTION") {
-      console.log("CONNECTION ERROR: Verify SMTP settings or port number.");
-    }
+    console.error("SMTP Connection Error:", error.message);
   } else {
-    console.log("SMTP Connection Successful - Ready to send emails");
+    console.log("✅ Gmail SMTP ready to send emails");
   }
 });
 
-// Helper function for consistent email templates
+// Helper for consistent templates
 const buildTemplate = (title, content) => `
   <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
     <div style="text-align: center; margin-bottom: 30px;">
@@ -71,7 +58,7 @@ const emailService = {
     `;
 
     const mailOptions = {
-      from: process.env.SMTP_FROM,
+      from: process.env.EMAIL_USER,
       to: email,
       subject: "Verify Your Email - FRENTAL",
       html: buildTemplate("Email Verification Code", htmlContent),
@@ -82,19 +69,13 @@ const emailService = {
         `Attempting to send verification email (Attempt ${retryCount + 1})`
       );
       const info = await transporter.sendMail(mailOptions);
-
-      console.log("Verification email sent successfully:", {
-        to: email,
-        messageId: info.messageId,
-      });
-
+      console.log("Verification email sent successfully:", info.messageId);
       return { success: true, messageId: info.messageId };
     } catch (error) {
       console.error(
         `Email sending failed (Attempt ${retryCount + 1}):`,
         error.message
       );
-
       if (retryCount < 2) {
         console.log("Retrying in 3 seconds...");
         await new Promise((resolve) => setTimeout(resolve, 3000));
@@ -105,7 +86,6 @@ const emailService = {
           retryCount + 1
         );
       }
-
       return { success: false, error: error.message };
     }
   },
@@ -116,7 +96,6 @@ const emailService = {
       return { success: true, skipped: true };
     }
 
-    console.log(`Sending password reset email to: ${email}`);
     const htmlContent = `
       <p>Hello <strong>${fullName}</strong>,</p>
       <p>Use the reset code below to reset your password:</p>
@@ -130,7 +109,7 @@ const emailService = {
     `;
 
     const mailOptions = {
-      from: process.env.SMTP_FROM,
+      from: process.env.EMAIL_USER,
       to: email,
       subject: "Reset Your Password - FRENTAL",
       html: buildTemplate("Password Reset Code", htmlContent),
@@ -138,11 +117,10 @@ const emailService = {
 
     try {
       const info = await transporter.sendMail(mailOptions);
-      console.log("Password reset email sent successfully.");
+      console.log("Password reset email sent successfully:", info.messageId);
       return { success: true, messageId: info.messageId };
     } catch (error) {
       console.error(`Password reset email failed:`, error.message);
-
       if (retryCount < 2) {
         console.log("Retrying in 3 seconds...");
         await new Promise((resolve) => setTimeout(resolve, 3000));
@@ -153,7 +131,6 @@ const emailService = {
           retryCount + 1
         );
       }
-
       return { success: false, error: error.message };
     }
   },
@@ -164,7 +141,6 @@ const emailService = {
       return { success: true, skipped: true };
     }
 
-    console.log(`Sending password changed confirmation to: ${email}`);
     const htmlContent = `
       <p>Hello <strong>${fullName}</strong>,</p>
       <p>Your FRENTAL account password has been changed successfully.</p>
@@ -176,7 +152,7 @@ const emailService = {
     `;
 
     const mailOptions = {
-      from: process.env.SMTP_FROM,
+      from: process.env.EMAIL_USER,
       to: email,
       subject: "Password Changed Successfully - FRENTAL",
       html: buildTemplate("Password Changed Confirmation", htmlContent),
@@ -184,17 +160,18 @@ const emailService = {
 
     try {
       const info = await transporter.sendMail(mailOptions);
-      console.log("Password changed confirmation sent successfully.");
+      console.log(
+        "Password changed confirmation sent successfully:",
+        info.messageId
+      );
       return { success: true, messageId: info.messageId };
     } catch (error) {
       console.error(`Password changed email failed:`, error.message);
-
       if (retryCount < 2) {
         console.log("Retrying in 3 seconds...");
         await new Promise((resolve) => setTimeout(resolve, 3000));
         return this.sendPasswordChangedEmail(email, fullName, retryCount + 1);
       }
-
       return { success: false, error: error.message };
     }
   },
