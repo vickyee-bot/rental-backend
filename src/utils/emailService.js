@@ -12,20 +12,29 @@ console.log(
 console.log("NODE_ENV:", process.env.NODE_ENV);
 console.log("SKIP_EMAILS:", process.env.SKIP_EMAILS);
 
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS, // Must be 16-character App Password
-  },
-  // Add timeout settings
-  connectionTimeout: 15000,
-  greetingTimeout: 15000,
-  socketTimeout: 15000,
-});
+// Create transporter factory function instead of singleton
+const createTransporter = () => {
+  console.log("🔄 Creating new transporter instance...");
+  return nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS, // Must be 16-character App Password
+    },
+    // Add timeout settings
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 15000,
+  });
+};
 
-transporter.verify((error, success) => {
-  if (error) {
+// Verify transporter on first creation (optional, for debugging)
+const verifyTransporter = async (transporter) => {
+  try {
+    await transporter.verify();
+    console.log("✅ Gmail SMTP ready to send emails");
+    return true;
+  } catch (error) {
     console.error("❌ SMTP Connection Failed:", {
       message: error.message,
       code: error.code,
@@ -39,10 +48,9 @@ transporter.verify((error, success) => {
         "💡 Tip: Use 16-character App Password from Google Account settings"
       );
     }
-  } else {
-    console.log("✅ Gmail SMTP ready to send emails");
+    return false;
   }
-});
+};
 
 // Helper for consistent templates
 const buildTemplate = (title, content) => `
@@ -107,8 +115,17 @@ const emailService = {
       html: buildTemplate("Email Verification Code", htmlContent),
     };
 
+    // Create fresh transporter for each request
+    const transporter = createTransporter();
+
     try {
       console.log(`📤 Attempting to send (Attempt ${retryCount + 1})...`);
+
+      // Optional: Verify connection on first attempt
+      if (retryCount === 0) {
+        await verifyTransporter(transporter);
+      }
+
       const info = await transporter.sendMail(mailOptions);
 
       console.log("✅ Verification email sent successfully!", {
@@ -137,6 +154,9 @@ const emailService = {
       }
 
       return { success: false, error: error.message };
+    } finally {
+      // Always close the transporter to clean up connections
+      transporter.close();
     }
   },
 
@@ -175,6 +195,9 @@ const emailService = {
       html: buildTemplate("Password Reset Code", htmlContent),
     };
 
+    // Create fresh transporter for each request
+    const transporter = createTransporter();
+
     try {
       const info = await transporter.sendMail(mailOptions);
       console.log("✅ Password reset email sent successfully!");
@@ -193,6 +216,9 @@ const emailService = {
       }
 
       return { success: false, error: error.message };
+    } finally {
+      // Always close the transporter to clean up connections
+      transporter.close();
     }
   },
 
@@ -221,6 +247,9 @@ const emailService = {
       html: buildTemplate("Password Changed Successfully", htmlContent),
     };
 
+    // Create fresh transporter for each request
+    const transporter = createTransporter();
+
     try {
       const info = await transporter.sendMail(mailOptions);
       console.log("✅ Password changed confirmation sent successfully!");
@@ -234,6 +263,9 @@ const emailService = {
       }
 
       return { success: false, error: error.message };
+    } finally {
+      // Always close the transporter to clean up connections
+      transporter.close();
     }
   },
 };
