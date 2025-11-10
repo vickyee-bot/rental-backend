@@ -56,7 +56,7 @@ async function main() {
             deposit: faker.number.int({ min: 8000, max: 40000 }),
             size: faker.number.int({ min: 500, max: 1200 }) + " sq ft",
             imageUrls: [],
-            status: faker.helpers.arrayElement(["Vacant", "Occupied"]),
+            status: faker.helpers.arrayElement(["VACANT", "OCCUPIED"]),
             propertyId: property.id,
           },
         });

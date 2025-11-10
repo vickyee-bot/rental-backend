@@ -98,19 +98,36 @@ const authController = {
       const token = generateToken(landlord.id, "landlord");
 
       // 🚀 FIRE AND FORGET - Don't wait for email at all
+      // In registerLandlord - replace the email sending part with:
+      console.log("🚀 Starting email sending process...");
+      console.log("📧 Email details:", { email, verifyToken, fullName });
+
       emailService
         .sendVerificationEmail(email, verifyToken, fullName)
         .then((result) => {
+          console.log("📧 Email sending completed:", {
+            success: result.success,
+            skipped: result.skipped,
+            error: result.error,
+            messageId: result.messageId,
+          });
+
           if (result.success) {
-            console.log("✅ Email sent successfully in background");
+            if (result.skipped) {
+              console.log("⏭️ Email skipped (DEV MODE)");
+            } else {
+              console.log("✅ Email sent successfully in background");
+            }
           } else {
             console.error("❌ Background email failed:", result.error);
           }
         })
         .catch((error) => {
-          console.error("❌ Background email error:", error.message);
+          console.error("❌ Unexpected email error:", {
+            message: error.message,
+            stack: error.stack,
+          });
         });
-
       // ⚡ INSTANT RESPONSE - Don't wait for email
       res.status(201).json({
         success: true,

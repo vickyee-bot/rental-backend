@@ -11,7 +11,7 @@ const unitController = {
         deposit,
         size,
         propertyId,
-        status = "Vacant",
+        status = "VACANT",
       } = req.body;
 
       // Validate required fields
@@ -60,7 +60,7 @@ const unitController = {
           rent: parseFloat(rent),
           deposit: deposit ? parseFloat(deposit) : null,
           size: size || null,
-          status,
+          status: status.toUpperCase(), // Ensure uppercase
           imageUrls,
           propertyId,
         },
@@ -133,7 +133,7 @@ const unitController = {
         newImageUrls = [...newImageUrls, ...uploadedImages];
       }
 
-      // Update unit
+      // Update unit with uppercase status
       const unit = await prisma.unit.update({
         where: { id },
         data: {
@@ -142,7 +142,7 @@ const unitController = {
           deposit:
             deposit !== undefined ? parseFloat(deposit) : existingUnit.deposit,
           size: size || existingUnit.size,
-          status: status || existingUnit.status,
+          status: status ? status.toUpperCase() : existingUnit.status, // Ensure uppercase
           imageUrls: newImageUrls,
         },
         include: {
@@ -239,7 +239,7 @@ const unitController = {
         where.propertyId = propertyId;
       }
       if (status) {
-        where.status = status;
+        where.status = status.toUpperCase(); // Ensure uppercase for filtering
       }
 
       const [units, total] = await Promise.all([
@@ -357,10 +357,16 @@ const unitController = {
         });
       }
 
-      if (!status || !["Vacant", "Occupied"].includes(status)) {
+      // Convert to uppercase for validation
+      const uppercaseStatus = status ? status.toUpperCase() : null;
+
+      if (
+        !uppercaseStatus ||
+        !["VACANT", "OCCUPIED"].includes(uppercaseStatus)
+      ) {
         return res.status(400).json({
           success: false,
-          message: "Valid status (Vacant or Occupied) is required",
+          message: "Valid status (VACANT or OCCUPIED) is required",
         });
       }
 
@@ -382,7 +388,7 @@ const unitController = {
 
       const updatedUnit = await prisma.unit.update({
         where: { id },
-        data: { status },
+        data: { status: uppercaseStatus }, // Use uppercase
         include: {
           property: {
             select: {
@@ -395,7 +401,7 @@ const unitController = {
 
       res.json({
         success: true,
-        message: `Unit status updated to ${status}`,
+        message: `Unit status updated to ${uppercaseStatus}`,
         data: updatedUnit,
       });
     } catch (error) {
