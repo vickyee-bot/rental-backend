@@ -7,7 +7,7 @@ const tokenUtils = {
   },
 
   // Generate token expiration (default 1 hour)
-  generateExpiry: (hours = 1) => {
+  generateExpiry: (hours = 24) => {
     const expiry = new Date();
     expiry.setHours(expiry.getHours() + hours);
     return expiry;
