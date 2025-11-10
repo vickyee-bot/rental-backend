@@ -129,13 +129,13 @@ const landlordController = {
         prisma.unit.count({
           where: {
             property: { landlordId },
-            status: "Vacant",
+            status: "VACANT",
           },
         }),
         prisma.unit.count({
           where: {
             property: { landlordId },
-            status: "Occupied",
+            status: "OCCUPIED",
           },
         }),
         prisma.property.count({
