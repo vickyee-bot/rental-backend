@@ -8,7 +8,7 @@ const router = express.Router();
 router.use(authMiddleware);
 
 router.get("/profile", landlordController.getProfile);
-router.put("/profile", landlordController.updateProfile);
+router.put("/profile", authMiddleware, landlordController.updateProfile);
 router.put("/password", landlordController.changePassword);
 router.get("/dashboard", landlordController.getDashboard);
 

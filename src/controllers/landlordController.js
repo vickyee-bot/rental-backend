@@ -42,13 +42,22 @@ const landlordController = {
   // Update landlord profile
   updateProfile: async (req, res) => {
     try {
-      const { fullName, email } = req.body;
+      const { fullName, email, phoneNumber } = req.body; // Add phoneNumber here
+
+      // Validate required fields
+      if (!fullName || !email) {
+        return res.status(400).json({
+          success: false,
+          message: "Full name and email are required",
+        });
+      }
 
       const landlord = await prisma.landlord.update({
         where: { id: req.user.id },
         data: {
           fullName,
           email,
+          phoneNumber, // Now this variable is defined
         },
         select: {
           id: true,
@@ -66,9 +75,20 @@ const landlordController = {
       });
     } catch (error) {
       console.error("Update profile error:", error);
+
+      // Provide more specific error messages
+      if (error.code === "P2002") {
+        return res.status(400).json({
+          success: false,
+          message: "Email or phone number already exists",
+        });
+      }
+
       res.status(500).json({
         success: false,
         message: "Error updating profile",
+        error:
+          process.env.NODE_ENV === "development" ? error.message : undefined,
       });
     }
   },
