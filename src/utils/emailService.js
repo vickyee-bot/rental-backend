@@ -1,8 +1,11 @@
+// emailService.js
 const sibApiV3Sdk = require("@getbrevo/brevo");
 const nodemailer = require("nodemailer");
 
-// Debug environment variables
-console.log("📧 Brevo Configuration Check:");
+// ---------------------------
+// Environment Check Logs
+// ---------------------------
+console.log("📧 Email Configuration Check:");
 console.log(
   "BREVO_API_KEY:",
   process.env.BREVO_API_KEY ? "*** Set ***" : "❌ Missing"
@@ -11,20 +14,39 @@ console.log(
   "BREVO_SENDER_EMAIL:",
   process.env.BREVO_SENDER_EMAIL || "❌ Missing"
 );
-console.log("NODE_ENV:", process.env.NODE_ENV);
+console.log(
+  "BREVO_SENDER_NAME:",
+  process.env.BREVO_SENDER_NAME || "❌ Missing"
+);
+console.log(
+  "EMAIL_USER:",
+  process.env.EMAIL_USER ? "*** Set ***" : "❌ Missing"
+);
+console.log(
+  "EMAIL_PASS:",
+  process.env.EMAIL_PASS ? "*** Set ***" : "❌ Missing"
+);
 console.log("SKIP_EMAILS:", process.env.SKIP_EMAILS);
 
-// Initialize Brevo API client
-let apiInstance = new sibApiV3Sdk.TransactionalEmailsApi();
-let apiKey = apiInstance.authentications["apiKey"];
+// ---------------------------
+// Brevo Client Setup - FIXED VERSION
+// ---------------------------
+let defaultClient = sibApiV3Sdk.ApiClient.instance;
+let apiKey = defaultClient.authentications["api-key"];
 apiKey.apiKey = process.env.BREVO_API_KEY;
 
-// Fallback transporter (Gmail)
+const brevoApi = new sibApiV3Sdk.TransactionalEmailsApi();
+
+// ---------------------------
+// Fallback Transporter
+// ---------------------------
 const createFallbackTransporter = () => {
   if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    console.log("❌ No fallback SMTP credentials");
     return null;
   }
 
+  console.log("🔄 Fallback SMTP available");
   return nodemailer.createTransport({
     host: "smtp.gmail.com",
     port: 587,
@@ -36,83 +58,97 @@ const createFallbackTransporter = () => {
   });
 };
 
-const sendEmailWithBrevo = async (to, subject, html, text = null) => {
-  if (process.env.SKIP_EMAILS === "true") {
-    console.log(`[DEV MODE] Skipping email to ${to}`);
-    return { success: true, skipped: true, provider: "brevo" };
-  }
-
+// ---------------------------
+// Email Sending Functions
+// ---------------------------
+const sendEmailWithBrevo = async (to, subject, html) => {
   try {
-    console.log(`📨 Sending Brevo email to: ${to}`);
+    // Check if we should skip emails
+    if (process.env.SKIP_EMAILS === "true") {
+      console.log(`[DEV MODE] Skipped email to ${to}`);
+      return { success: true, skipped: true, provider: "brevo" };
+    }
+
+    // Validate Brevo configuration
+    if (!process.env.BREVO_API_KEY) {
+      console.log("⚠️ Brevo API key missing, switching to fallback");
+      return await sendEmailWithFallback(to, subject, html);
+    }
+
+    if (!process.env.BREVO_SENDER_EMAIL) {
+      console.log("⚠️ Brevo sender email missing, switching to fallback");
+      return await sendEmailWithFallback(to, subject, html);
+    }
+
+    console.log(`📨 Sending via Brevo → ${to}`);
     console.log(`📝 Subject: "${subject}"`);
 
-    const sendSmtpEmail = new sibApiV3Sdk.SendSmtpEmail();
-    sendSmtpEmail.subject = subject;
-    sendSmtpEmail.htmlContent = html;
-    sendSmtpEmail.sender = {
+    const emailData = new sibApiV3Sdk.SendSmtpEmail();
+    emailData.sender = {
       name: process.env.BREVO_SENDER_NAME || "FRENTAL",
       email: process.env.BREVO_SENDER_EMAIL,
     };
-    sendSmtpEmail.to = [{ email: to }];
+    emailData.to = [{ email: to }];
+    emailData.subject = subject;
+    emailData.htmlContent = html;
 
-    if (text) {
-      sendSmtpEmail.textContent = text;
-    }
+    const response = await brevoApi.sendTransacEmail(emailData);
 
-    const data = await apiInstance.sendTransacEmail(sendSmtpEmail);
-
-    console.log("✅ Brevo email sent successfully:", {
-      messageId: data.messageId,
+    console.log("✅ Brevo → Email sent successfully", {
+      messageId: response.messageId,
       to: to,
-      provider: "brevo",
     });
 
     return {
       success: true,
-      messageId: data.messageId,
+      messageId: response.messageId,
       provider: "brevo",
     };
   } catch (error) {
-    console.error("❌ Brevo email failed:", {
-      error: error.message,
+    console.error("❌ Brevo API Error:", {
+      message: error.message,
       statusCode: error.code,
-      to: to,
+      response: error.response?.body,
     });
 
-    // Fallback to nodemailer
-    console.log("🔄 Attempting fallback to nodemailer...");
+    // Fallback to SMTP
+    console.log("🔄 Falling back to SMTP...");
     return await sendEmailWithFallback(to, subject, html);
   }
 };
 
 const sendEmailWithFallback = async (to, subject, html) => {
-  const transporter = createFallbackTransporter();
+  console.log("🔄 Attempting fallback SMTP...");
 
+  const transporter = createFallbackTransporter();
   if (!transporter) {
+    console.error("❌ No fallback email configuration available");
     return {
       success: false,
-      error: "No fallback email configuration available",
       provider: "none",
+      error: "No email provider configured",
     };
   }
 
   try {
-    console.log(`📨 Sending fallback email to: ${to}`);
-
+    // Verify SMTP connection
     await transporter.verify();
+    console.log("✅ SMTP connection verified");
 
     const mailOptions = {
-      from: process.env.EMAIL_USER,
+      from: `"${process.env.BREVO_SENDER_NAME || "FRENTAL"}" <${
+        process.env.EMAIL_USER
+      }>`,
       to,
       subject,
       html,
     };
 
     const result = await transporter.sendMail(mailOptions);
-    console.log("✅ Fallback email sent successfully:", {
+
+    console.log("✅ Fallback SMTP → Email sent successfully", {
       messageId: result.messageId,
       to: to,
-      provider: "nodemailer",
     });
 
     return {
@@ -120,38 +156,46 @@ const sendEmailWithFallback = async (to, subject, html) => {
       messageId: result.messageId,
       provider: "nodemailer",
     };
-  } catch (fallbackError) {
-    console.error("❌ Fallback email also failed:", fallbackError.message);
+  } catch (error) {
+    console.error("❌ Fallback SMTP failed:", {
+      error: error.message,
+      code: error.code,
+    });
+
     return {
       success: false,
-      error: fallbackError.message,
       provider: "nodemailer",
+      error: error.message,
     };
   }
 };
 
+// ---------------------------
+// Enhanced Email Templates
+// ---------------------------
 const emailService = {
   async sendVerificationEmail(email, token, fullName) {
     const subject = "Verify Your Email - FRENTAL";
+
     const html = `
       <!DOCTYPE html>
       <html>
       <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Verify Your Email - FRENTAL</title>
+        <title>Email Verification - FRENTAL</title>
       </head>
       <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
         <div style="text-align: center; margin-bottom: 30px;">
           <h1 style="color: #0ea5e9; margin: 0; font-size: 28px;">FRENTAL</h1>
-          <p style="color: #666; margin: 5px 0 0 0; font-size: 16px;">Property Management App</p>
+          <p style="color: #666; margin: 5px 0 0 0; font-size: 16px;">Property Management</p>
         </div>
         
-        <h2 style="color: #333; text-align: center; font-size: 24px; margin-bottom: 20px;">Email Verification Code</h2>
+        <h2 style="color: #333; text-align: center; font-size: 24px; margin-bottom: 20px;">Verify Your Email</h2>
         
         <p style="font-size: 16px;">Hello <strong style="color: #0ea5e9;">${fullName}</strong>,</p>
         
-        <p style="font-size: 16px;">Welcome to FRENTAL! Use the verification code below in your mobile app to complete your registration:</p>
+        <p style="font-size: 16px;">Welcome to FRENTAL! Use the verification code below to complete your registration:</p>
         
         <div style="text-align: center; margin: 40px 0;">
           <div style="background: linear-gradient(135deg, #0ea5e9, #0c8ac9); color: white; padding: 25px; border-radius: 12px; 
@@ -163,7 +207,7 @@ const emailService = {
         
         <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #0ea5e9;">
           <p style="margin: 0; color: #666; text-align: center; font-size: 14px;">
-            <strong style="color: #0ea5e9;">Instructions:</strong><br>
+            <strong>Instructions:</strong><br>
             1. Open your FRENTAL app<br>
             2. Enter this verification code<br>
             3. Complete your registration
@@ -172,18 +216,8 @@ const emailService = {
         
         <div style="background: #fff3cd; padding: 15px; border-radius: 6px; border: 1px solid #ffeaa7; margin: 20px 0;">
           <p style="margin: 0; color: #856404; text-align: center; font-size: 14px;">
-            ⚠️ <strong>This code will expire in 24 hours.</strong><br>
-            If you didn't request this verification, please ignore this email.
-          </p>
-        </div>
-        
-        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; text-align: center;">
-          <p style="color: #999; font-size: 12px;">
-            Need help? Contact our support team at 
-            <a href="mailto:support@frental.com" style="color: #0ea5e9; text-decoration: none;">support@frental.com</a>
-          </p>
-          <p style="color: #999; font-size: 12px; margin-top: 5px;">
-            &copy; 2024 FRENTAL. All rights reserved.
+            ⚠️ <strong>This code expires in 24 hours.</strong><br>
+            If you didn't request this, please ignore this email.
           </p>
         </div>
       </body>
@@ -195,6 +229,7 @@ const emailService = {
 
   async sendPasswordResetEmail(email, token, fullName) {
     const subject = "Reset Your Password - FRENTAL";
+
     const html = `
       <!DOCTYPE html>
       <html>
@@ -208,11 +243,11 @@ const emailService = {
           <h1 style="color: #0ea5e9; margin: 0; font-size: 28px;">FRENTAL</h1>
         </div>
         
-        <h2 style="color: #333; text-align: center; font-size: 24px; margin-bottom: 20px;">Password Reset Code</h2>
+        <h2 style="color: #333; text-align: center; font-size: 24px; margin-bottom: 20px;">Password Reset</h2>
         
         <p style="font-size: 16px;">Hello <strong style="color: #0ea5e9;">${fullName}</strong>,</p>
         
-        <p style="font-size: 16px;">You requested to reset your password. Use the reset code below:</p>
+        <p style="font-size: 16px;">You requested to reset your password. Use the code below:</p>
         
         <div style="text-align: center; margin: 40px 0;">
           <div style="background: linear-gradient(135deg, #dc2626, #b91c1c); color: white; padding: 20px; border-radius: 10px; 
@@ -224,15 +259,8 @@ const emailService = {
         
         <div style="background: #fef2f2; padding: 15px; border-radius: 6px; border: 1px solid #fecaca; margin: 20px 0;">
           <p style="margin: 0; color: #dc2626; text-align: center; font-size: 14px;">
-            ⚠️ <strong>This code will expire in 1 hour.</strong><br>
-            If you didn't request this reset, please secure your account immediately.
-          </p>
-        </div>
-        
-        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; text-align: center;">
-          <p style="color: #999; font-size: 12px;">
-            Need help? Contact: 
-            <a href="mailto:support@frental.com" style="color: #0ea5e9; text-decoration: none;">support@frental.com</a>
+            ⚠️ <strong>This code expires in 1 hour.</strong><br>
+            If you didn't request this, please secure your account.
           </p>
         </div>
       </body>
@@ -243,14 +271,15 @@ const emailService = {
   },
 
   async sendPasswordChangedEmail(email, fullName) {
-    const subject = "Password Changed Successfully - FRENTAL";
+    const subject = "Password Changed - FRENTAL";
+
     const html = `
       <!DOCTYPE html>
       <html>
       <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Password Changed - FRENTAL</title>
+        <title>Password Updated - FRENTAL</title>
       </head>
       <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
         <div style="text-align: center; margin-bottom: 30px;">
@@ -263,21 +292,15 @@ const emailService = {
           </div>
         </div>
         
-        <h2 style="color: #16a34a; text-align: center; font-size: 24px; margin-bottom: 20px;">Password Changed Successfully</h2>
+        <h2 style="color: #16a34a; text-align: center; font-size: 24px; margin-bottom: 20px;">Password Updated</h2>
         
         <p style="font-size: 16px;">Hello <strong style="color: #0ea5e9;">${fullName}</strong>,</p>
         
-        <p style="font-size: 16px;">Your FRENTAL account password has been successfully changed.</p>
+        <p style="font-size: 16px;">Your FRENTAL password has been changed successfully.</p>
         
         <div style="background-color: #f0fdf4; padding: 20px; border-radius: 8px; border: 1px solid #bbf7d0; text-align: center; margin: 25px 0;">
           <p style="margin: 0; color: #166534; font-size: 14px;">
-            🔒 <strong>Security Alert:</strong> If you didn't make this change, please contact our support team immediately.
-          </p>
-        </div>
-        
-        <div style="margin-top: 30px; text-align: center;">
-          <p style="color: #666; font-size: 14px;">
-            Need help? <a href="mailto:support@frental.com" style="color: #0ea5e9; text-decoration: none;">Contact Support</a>
+            🔒 <strong>Security Note:</strong> If you didn't make this change, contact support immediately.
           </p>
         </div>
       </body>
@@ -285,6 +308,12 @@ const emailService = {
     `;
 
     return await sendEmailWithBrevo(email, subject, html);
+  },
+
+  // Test method for debugging
+  async testEmailService(email) {
+    console.log("🧪 Testing email service...");
+    return await this.sendVerificationEmail(email, "999999", "Test User");
   },
 };
 
