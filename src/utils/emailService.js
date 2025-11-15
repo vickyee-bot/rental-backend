@@ -1,5 +1,5 @@
 // emailService.js
-const sibApiV3Sdk = require("@getbrevo/brevo");
+const brevo = require("@getbrevo/brevo");
 const nodemailer = require("nodemailer");
 
 // ---------------------------
@@ -29,13 +29,11 @@ console.log(
 console.log("SKIP_EMAILS:", process.env.SKIP_EMAILS);
 
 // ---------------------------
-// Brevo Client Setup - FIXED VERSION
+// Brevo Client Setup - CORRECT WAY
 // ---------------------------
-let defaultClient = sibApiV3Sdk.ApiClient.instance;
-let apiKey = defaultClient.authentications["api-key"];
+let apiInstance = new brevo.TransactionalEmailsApi();
+let apiKey = apiInstance.authentications["apiKey"];
 apiKey.apiKey = process.env.BREVO_API_KEY;
-
-const brevoApi = new sibApiV3Sdk.TransactionalEmailsApi();
 
 // ---------------------------
 // Fallback Transporter
@@ -46,7 +44,7 @@ const createFallbackTransporter = () => {
     return null;
   }
 
-  console.log("🔄 Fallback SMTP available");
+  console.log("✅ Fallback SMTP available");
   return nodemailer.createTransport({
     host: "smtp.gmail.com",
     port: 587,
@@ -83,16 +81,16 @@ const sendEmailWithBrevo = async (to, subject, html) => {
     console.log(`📨 Sending via Brevo → ${to}`);
     console.log(`📝 Subject: "${subject}"`);
 
-    const emailData = new sibApiV3Sdk.SendSmtpEmail();
-    emailData.sender = {
+    const sendSmtpEmail = new brevo.SendSmtpEmail();
+    sendSmtpEmail.sender = {
       name: process.env.BREVO_SENDER_NAME || "FRENTAL",
       email: process.env.BREVO_SENDER_EMAIL,
     };
-    emailData.to = [{ email: to }];
-    emailData.subject = subject;
-    emailData.htmlContent = html;
+    sendSmtpEmail.to = [{ email: to }];
+    sendSmtpEmail.subject = subject;
+    sendSmtpEmail.htmlContent = html;
 
-    const response = await brevoApi.sendTransacEmail(emailData);
+    const response = await apiInstance.sendTransacEmail(sendSmtpEmail);
 
     console.log("✅ Brevo → Email sent successfully", {
       messageId: response.messageId,
