@@ -1,21 +1,15 @@
 // utils/emailQueue.js
-const emailService = require("./emailService");
-
 class EmailQueue {
-  constructor() {
+  constructor(maxRetries = 3, retryDelay = 5000) {
     this.queue = [];
     this.isProcessing = false;
-    this.maxRetries = 3;
+    this.maxRetries = maxRetries; // Max attempts per email
+    this.retryDelay = retryDelay; // Delay between retries in ms
   }
 
   add(email, token, fullName, type = "verification") {
-    this.queue.push({
-      email,
-      token,
-      fullName,
-      type,
-      retries: 0,
-    });
+    // Each job keeps track of its attempt count
+    this.queue.push({ email, token, fullName, type, attempts: 0 });
     this.process();
   }
 
@@ -23,72 +17,52 @@ class EmailQueue {
     if (this.isProcessing || this.queue.length === 0) return;
 
     this.isProcessing = true;
-    const job = this.queue[0]; // Peek at first job
+    const job = this.queue.shift();
 
     try {
-      console.log(`📧 Processing ${job.type} email for: ${job.email}`);
-
-      let result;
-      if (job.type === "verification") {
-        result = await emailService.sendVerificationEmail(
-          job.email,
-          job.token,
-          job.fullName
-        );
-      } else if (job.type === "passwordReset") {
-        result = await emailService.sendPasswordResetEmail(
-          job.email,
-          job.token,
-          job.fullName
-        );
-      } else if (job.type === "passwordChanged") {
-        result = await emailService.sendPasswordChangedEmail(
-          job.email,
-          job.fullName
-        );
+      switch (job.type) {
+        case "verification":
+          await emailService.sendVerificationEmail(
+            job.email,
+            job.token,
+            job.fullName
+          );
+          break;
+        case "reset":
+          await emailService.sendPasswordResetEmail(
+            job.email,
+            job.token,
+            job.fullName
+          );
+          break;
+        case "changed":
+          await emailService.sendPasswordChangedEmail(job.email, job.fullName);
+          break;
+        default:
+          console.warn(`Unknown email type: ${job.type}`);
       }
-
-      if (result.success) {
-        console.log(`✅ ${job.type} email sent to ${job.email}`);
-        this.queue.shift(); // Remove successful job
-      } else {
-        throw new Error(result.error || "Email sending failed");
-      }
+      console.log(`✅ Email sent successfully to ${job.email} (${job.type})`);
     } catch (error) {
-      console.error(`❌ Email failed for ${job.email}:`, error.message);
+      job.attempts++;
+      console.error(
+        `❌ Failed to send email to ${job.email} (${job.type}), attempt ${job.attempts}:`,
+        error.message
+      );
 
-      job.retries++;
-
-      if (job.retries >= this.maxRetries) {
-        console.error(
-          `💥 Max retries exceeded for ${job.email}, removing from queue`
+      if (job.attempts < this.maxRetries) {
+        console.log(`🔄 Retrying in ${this.retryDelay / 1000} seconds...`);
+        setTimeout(
+          () => this.queue.unshift(job) && this.process(),
+          this.retryDelay
         );
-        this.queue.shift(); // Remove failed job after max retries
       } else {
-        console.log(
-          `🔄 Retrying ${job.email} (attempt ${job.retries + 1}/${
-            this.maxRetries
-          })`
-        );
-        // Move failed job to end of queue for retry
-        this.queue.push(this.queue.shift());
+        console.error(`❌ Max retries reached. Email to ${job.email} dropped.`);
       }
     } finally {
       this.isProcessing = false;
-
-      // Process next job if any
-      if (this.queue.length > 0) {
-        setImmediate(() => this.process());
-      }
+      // Continue processing next job
+      if (this.queue.length > 0) this.process();
     }
-  }
-
-  getQueueLength() {
-    return this.queue.length;
-  }
-
-  clearQueue() {
-    this.queue = [];
   }
 }
 

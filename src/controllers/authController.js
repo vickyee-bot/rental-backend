@@ -4,34 +4,31 @@ const {
   comparePassword,
   generateToken,
 } = require("../utils/auth");
-const emailService = require("../utils/emailService");
 const tokenUtils = require("../utils/tokenUtils");
+const emailQueue = require("../utils/emailQueue");
 
-// Use a single Prisma client instance (better performance)
 const prisma = new PrismaClient();
 
 const authController = {
-  // ✅ Landlord Registration with Email Verification - ULTRA FAST
+  // ✅ Landlord Registration with Email Verification
   registerLandlord: async (req, res) => {
     try {
       const { fullName, phoneNumber, email, password } = req.body;
 
-      // Fast validation - return early for errors
       if (!fullName || !phoneNumber || !email || !password) {
-        return res.status(400).json({
-          success: false,
-          message: "All fields are required",
-        });
+        return res
+          .status(400)
+          .json({ success: false, message: "All fields are required" });
       }
-
       if (password.length < 6) {
-        return res.status(400).json({
-          success: false,
-          message: "Password must be at least 6 characters long",
-        });
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message: "Password must be at least 6 characters long",
+          });
       }
 
-      // Parallel existence checks
       const [existingByPhone, existingByEmail] = await Promise.all([
         prisma.landlord.findUnique({
           where: { phoneNumber },
@@ -44,25 +41,23 @@ const authController = {
       ]);
 
       if (existingByPhone) {
-        return res.status(400).json({
-          success: false,
-          message: "Phone number already registered",
-        });
+        return res
+          .status(400)
+          .json({ success: false, message: "Phone number already registered" });
       }
-
       if (existingByEmail) {
         const message = !existingByEmail.isVerified
           ? "Email already registered but not verified. Please verify your email or use resend verification."
           : "Email already registered";
-
-        return res.status(400).json({
-          success: false,
-          message,
-          requiresVerification: !existingByEmail.isVerified,
-        });
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message,
+            requiresVerification: !existingByEmail.isVerified,
+          });
       }
 
-      // Parallel password hashing and token generation
       const [passwordHash, verifyToken, verifyExpires] = await Promise.all([
         hashPassword(password),
         Promise.resolve(Math.floor(100000 + Math.random() * 900000).toString()),
@@ -73,7 +68,6 @@ const authController = {
         ),
       ]);
 
-      // Create landlord
       const landlord = await prisma.landlord.create({
         data: {
           fullName,
@@ -94,41 +88,12 @@ const authController = {
         },
       });
 
-      // Generate token
       const token = generateToken(landlord.id, "landlord");
 
-      // 🚀 FIRE AND FORGET - Don't wait for email at all
-      // In registerLandlord - replace the email sending part with:
-      console.log("🚀 Starting email sending process...");
-      console.log("📧 Email details:", { email, verifyToken, fullName });
+      // 🚀 Queue verification email
+      emailQueue.add(email, verifyToken, fullName, "verification");
+      console.log("🚀 Verification email queued successfully");
 
-      emailService
-        .sendVerificationEmail(email, verifyToken, fullName)
-        .then((result) => {
-          console.log("📧 Email sending completed:", {
-            success: result.success,
-            skipped: result.skipped,
-            error: result.error,
-            messageId: result.messageId,
-          });
-
-          if (result.success) {
-            if (result.skipped) {
-              console.log("⏭️ Email skipped (DEV MODE)");
-            } else {
-              console.log("✅ Email sent successfully in background");
-            }
-          } else {
-            console.error("❌ Background email failed:", result.error);
-          }
-        })
-        .catch((error) => {
-          console.error("❌ Unexpected email error:", {
-            message: error.message,
-            stack: error.stack,
-          });
-        });
-      // ⚡ INSTANT RESPONSE - Don't wait for email
       res.status(201).json({
         success: true,
         message:
@@ -143,44 +108,38 @@ const authController = {
       });
     } catch (error) {
       console.error("Registration error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Error during registration",
-        error:
-          process.env.NODE_ENV === "development" ? error.message : undefined,
-      });
+      res
+        .status(500)
+        .json({
+          success: false,
+          message: "Error during registration",
+          error:
+            process.env.NODE_ENV === "development" ? error.message : undefined,
+        });
     }
   },
 
-  // ✅ Verify Email with Code - OPTIMIZED
+  // ✅ Verify Email
   verifyEmail: async (req, res) => {
     try {
       const { email, code } = req.body;
+      if (!email || !code)
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message: "Email and verification code are required",
+          });
 
-      // Fast validation
-      if (!email || !code) {
-        return res.status(400).json({
-          success: false,
-          message: "Email and verification code are required",
-        });
-      }
-
-      // Single database query with proper conditions
       const landlord = await prisma.landlord.findFirst({
-        where: {
-          email: email,
-          verifyToken: code,
-          verifyExpires: { gt: new Date() },
-        },
+        where: { email, verifyToken: code, verifyExpires: { gt: new Date() } },
       });
 
       if (!landlord) {
-        // Check if code exists but expired (only if not found)
         const expiredLandlord = await prisma.landlord.findFirst({
           where: { email, verifyToken: code },
           select: { id: true },
         });
-
         return res.status(400).json({
           success: false,
           message: expiredLandlord
@@ -190,15 +149,10 @@ const authController = {
         });
       }
 
-      // Update and generate token in parallel
       const [_, token] = await Promise.all([
         prisma.landlord.update({
           where: { id: landlord.id },
-          data: {
-            isVerified: true,
-            verifyToken: null,
-            verifyExpires: null,
-          },
+          data: { isVerified: true, verifyToken: null, verifyExpires: null },
         }),
         generateToken(landlord.id, "landlord"),
       ]);
@@ -210,7 +164,7 @@ const authController = {
           landlord: {
             id: landlord.id,
             fullName: landlord.fullName,
-            phoneNumber: landlord.phoneNumber, // ✅ Added phoneNumber
+            phoneNumber: landlord.phoneNumber,
             email: landlord.email,
             isVerified: true,
           },
@@ -219,26 +173,25 @@ const authController = {
       });
     } catch (error) {
       console.error("Email verification error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Error verifying email",
-        error:
-          process.env.NODE_ENV === "development" ? error.message : undefined,
-      });
+      res
+        .status(500)
+        .json({
+          success: false,
+          message: "Error verifying email",
+          error:
+            process.env.NODE_ENV === "development" ? error.message : undefined,
+        });
     }
   },
 
-  // ✅ Resend Verification Code - ULTRA FAST
+  // ✅ Resend Verification Code
   resendVerification: async (req, res) => {
     try {
       const { email } = req.body;
-
-      if (!email) {
-        return res.status(400).json({
-          success: false,
-          message: "Email is required",
-        });
-      }
+      if (!email)
+        return res
+          .status(400)
+          .json({ success: false, message: "Email is required" });
 
       const landlord = await prisma.landlord.findFirst({
         where: { email },
@@ -249,63 +202,43 @@ const authController = {
           verifyExpires: true,
         },
       });
+      if (!landlord)
+        return res
+          .status(404)
+          .json({
+            success: false,
+            message: "No account found with this email",
+          });
+      if (landlord.isVerified)
+        return res
+          .status(400)
+          .json({ success: false, message: "Email is already verified" });
 
-      if (!landlord) {
-        return res.status(404).json({
-          success: false,
-          message: "No account found with this email",
-        });
-      }
-
-      if (landlord.isVerified) {
-        return res.status(400).json({
-          success: false,
-          message: "Email is already verified",
-        });
-      }
-
-      // Optimized rate limiting check
       const now = Date.now();
       const lastSent = landlord.verifyExpires.getTime();
-      const timeSinceLast = now - lastSent;
-      const minResendInterval = 60000; // 1 minute
+      if (now - lastSent < 60000)
+        return res
+          .status(429)
+          .json({
+            success: false,
+            message: `Please wait ${Math.ceil(
+              (60000 - (now - lastSent)) / 1000
+            )} seconds before requesting a new code`,
+          });
 
-      if (timeSinceLast > 0 && timeSinceLast < minResendInterval) {
-        const waitTime = Math.ceil((minResendInterval - timeSinceLast) / 1000);
-        return res.status(429).json({
-          success: false,
-          message: `Please wait ${waitTime} seconds before requesting a new code`,
-          retryAfter: waitTime,
-        });
-      }
-
-      // Generate new code
       const verifyToken = Math.floor(
         100000 + Math.random() * 900000
       ).toString();
-      const verifyExpires = tokenUtils.generateExpiry(24); // 24 hours
+      const verifyExpires = tokenUtils.generateExpiry(24);
 
-      // 🚀 FIRE AND FORGET - Update DB and send email without waiting
-      Promise.all([
-        prisma.landlord.update({
-          where: { id: landlord.id },
-          data: { verifyToken, verifyExpires },
-        }),
-        emailService
-          .sendVerificationEmail(email, verifyToken, landlord.fullName)
-          .then((result) => {
-            if (!result.success) {
-              console.error("❌ Background resend failed:", result.error);
-            }
-          })
-          .catch((error) => {
-            console.error("❌ Background resend error:", error.message);
-          }),
-      ]).catch((error) => {
-        console.error("❌ Background update error:", error.message);
+      await prisma.landlord.update({
+        where: { id: landlord.id },
+        data: { verifyToken, verifyExpires },
       });
 
-      // ⚡ INSTANT RESPONSE - Don't wait for email or DB update
+      emailQueue.add(email, verifyToken, landlord.fullName, "verification");
+      console.log("🚀 Verification email queued successfully");
+
       res.json({
         success: true,
         message: "Verification code sent successfully",
@@ -317,33 +250,31 @@ const authController = {
       });
     } catch (error) {
       console.error("Resend verification error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Error resending verification code",
-        error:
-          process.env.NODE_ENV === "development" ? error.message : undefined,
-      });
+      res
+        .status(500)
+        .json({
+          success: false,
+          message: "Error resending verification code",
+          error:
+            process.env.NODE_ENV === "development" ? error.message : undefined,
+        });
     }
   },
 
-  // ✅ Resend Password Reset Code - For when user didn't receive the first code
+  // ✅ Resend Password Reset
   resendPasswordReset: async (req, res) => {
     try {
       const { email } = req.body;
+      if (!email)
+        return res
+          .status(400)
+          .json({ success: false, message: "Email is required" });
 
-      if (!email) {
-        return res.status(400).json({
-          success: false,
-          message: "Email is required",
-        });
-      }
-
-      // Find landlord with active reset request
       const landlord = await prisma.landlord.findFirst({
         where: {
           email,
-          resetToken: { not: null }, // Must have an existing reset token
-          resetExpires: { gt: new Date() }, // Must not be expired
+          resetToken: { not: null },
+          resetExpires: { gt: new Date() },
         },
         select: {
           id: true,
@@ -352,68 +283,37 @@ const authController = {
           isVerified: true,
         },
       });
+      if (!landlord)
+        return res
+          .status(404)
+          .json({
+            success: false,
+            message:
+              "No active password reset request found. Please request a new password reset first.",
+          });
 
-      if (!landlord) {
-        return res.status(404).json({
-          success: false,
-          message:
-            "No active password reset request found. Please request a new password reset first.",
-        });
-      }
-
-      // Rate limiting check - same 1-minute interval
       const now = Date.now();
-      const lastSent = landlord.resetExpires.getTime();
-      const timeSinceLast = now - lastSent;
-      const minResendInterval = 60000; // 1 minute
+      if (now - landlord.resetExpires.getTime() < 60000)
+        return res
+          .status(429)
+          .json({
+            success: false,
+            message: `Please wait ${Math.ceil(
+              (60000 - (now - landlord.resetExpires.getTime())) / 1000
+            )} seconds before requesting a new reset code`,
+          });
 
-      if (timeSinceLast > 0 && timeSinceLast < minResendInterval) {
-        const waitTime = Math.ceil((minResendInterval - timeSinceLast) / 1000);
-        return res.status(429).json({
-          success: false,
-          message: `Please wait ${waitTime} seconds before requesting a new reset code`,
-          retryAfter: waitTime,
-        });
-      }
-
-      // Generate new reset code
       const resetToken = Math.floor(100000 + Math.random() * 900000).toString();
-      const resetExpires = tokenUtils.generateExpiry(1); // 1 hour
+      const resetExpires = tokenUtils.generateExpiry(1);
 
-      // 🚀 FIRE AND FORGET - Update DB and send email without waiting
-      Promise.all([
-        prisma.landlord.update({
-          where: { id: landlord.id },
-          data: { resetToken, resetExpires },
-        }),
-        emailService
-          .sendPasswordResetEmail(email, resetToken, landlord.fullName)
-          .then((result) => {
-            if (!result.success) {
-              console.error(
-                "❌ Background password reset resend failed:",
-                result.error
-              );
-            } else {
-              console.log(
-                "✅ Password reset code resent successfully in background"
-              );
-            }
-          })
-          .catch((error) => {
-            console.error(
-              "❌ Background password reset resend error:",
-              error.message
-            );
-          }),
-      ]).catch((error) => {
-        console.error(
-          "❌ Background password reset update error:",
-          error.message
-        );
+      await prisma.landlord.update({
+        where: { id: landlord.id },
+        data: { resetToken, resetExpires },
       });
 
-      // ⚡ INSTANT RESPONSE - Don't wait for email or DB update
+      emailQueue.add(email, resetToken, landlord.fullName, "reset");
+      console.log("🚀 Password reset email queued successfully");
+
       res.json({
         success: true,
         message: "Password reset code sent successfully",
@@ -425,26 +325,25 @@ const authController = {
       });
     } catch (error) {
       console.error("Resend password reset error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Error resending password reset code",
-        error:
-          process.env.NODE_ENV === "development" ? error.message : undefined,
-      });
+      res
+        .status(500)
+        .json({
+          success: false,
+          message: "Error resending password reset code",
+          error:
+            process.env.NODE_ENV === "development" ? error.message : undefined,
+        });
     }
   },
 
-  // ✅ Landlord Login - OPTIMIZED
+  // ✅ Landlord Login
   loginLandlord: async (req, res) => {
     try {
       const { email, password } = req.body;
-
-      if (!email || !password) {
-        return res.status(400).json({
-          success: false,
-          message: "Email and password are required",
-        });
-      }
+      if (!email || !password)
+        return res
+          .status(400)
+          .json({ success: false, message: "Email and password are required" });
 
       const landlord = await prisma.landlord.findFirst({
         where: { email },
@@ -457,216 +356,166 @@ const authController = {
           passwordHash: true,
         },
       });
-
       if (
         !landlord ||
         !(await comparePassword(password, landlord.passwordHash))
-      ) {
-        return res.status(401).json({
-          success: false,
-          message: "Invalid email or password",
-        });
-      }
+      )
+        return res
+          .status(401)
+          .json({ success: false, message: "Invalid email or password" });
 
       const token = generateToken(landlord.id, "landlord");
-
-      // Remove passwordHash from response
       const { passwordHash, ...landlordData } = landlord;
 
       res.json({
         success: true,
         message: "Login successful",
-        data: {
-          landlord: landlordData,
-          token,
-        },
+        data: { landlord: landlordData, token },
       });
     } catch (error) {
       console.error("Login error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Error during login",
-        error:
-          process.env.NODE_ENV === "development" ? error.message : undefined,
-      });
+      res
+        .status(500)
+        .json({
+          success: false,
+          message: "Error during login",
+          error:
+            process.env.NODE_ENV === "development" ? error.message : undefined,
+        });
     }
   },
 
-  // ✅ Forgot Password - ULTRA FAST
+  // ✅ Forgot Password
   forgotPassword: async (req, res) => {
     try {
       const { email } = req.body;
-
-      if (!email) {
-        return res.status(400).json({
-          success: false,
-          message: "Email is required",
-        });
-      }
+      if (!email)
+        return res
+          .status(400)
+          .json({ success: false, message: "Email is required" });
 
       const landlord = await prisma.landlord.findFirst({
         where: { email },
         select: { id: true, fullName: true },
       });
-
-      // Always return same message to prevent email enumeration
       const successMessage =
         "If an account exists with this email, a reset code has been sent";
 
-      if (!landlord) {
-        return res.json({ success: true, message: successMessage });
-      }
+      if (landlord) {
+        const resetToken = Math.floor(
+          100000 + Math.random() * 900000
+        ).toString();
+        const resetExpires = tokenUtils.generateExpiry(1);
 
-      // Generate reset token
-      const resetToken = Math.floor(100000 + Math.random() * 900000).toString();
-      const resetExpires = tokenUtils.generateExpiry(1); // 1 hour
-
-      // 🚀 FIRE AND FORGET - Update DB and send email without waiting
-      Promise.all([
-        prisma.landlord.update({
+        await prisma.landlord.update({
           where: { id: landlord.id },
           data: { resetToken, resetExpires },
-        }),
-        emailService
-          .sendPasswordResetEmail(email, resetToken, landlord.fullName)
-          .catch((error) =>
-            console.error("❌ Reset email failed:", error.message)
-          ),
-      ]).catch((error) => {
-        console.error("❌ Background update error:", error.message);
-      });
+        });
+        emailQueue.add(email, resetToken, landlord.fullName, "reset");
+        console.log("🚀 Password reset email queued successfully");
+      }
 
-      // ⚡ INSTANT RESPONSE
       res.json({ success: true, message: successMessage });
     } catch (error) {
       console.error("Forgot password error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Error processing request",
-        error:
-          process.env.NODE_ENV === "development" ? error.message : undefined,
-      });
+      res
+        .status(500)
+        .json({
+          success: false,
+          message: "Error processing request",
+          error:
+            process.env.NODE_ENV === "development" ? error.message : undefined,
+        });
     }
   },
 
-  // ✅ Reset Password with Code - ULTRA FAST
+  // ✅ Reset Password
   resetPassword: async (req, res) => {
     try {
       const { email, code, newPassword } = req.body;
-
-      // Fast validation
-      if (!email || !code || !newPassword) {
-        return res.status(400).json({
-          success: false,
-          message: "Email, code, and new password are required",
-        });
-      }
-
-      if (newPassword.length < 6) {
-        return res.status(400).json({
-          success: false,
-          message: "Password must be at least 6 characters long",
-        });
-      }
+      if (!email || !code || !newPassword)
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message: "Email, code, and new password are required",
+          });
+      if (newPassword.length < 6)
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message: "Password must be at least 6 characters long",
+          });
 
       const landlord = await prisma.landlord.findFirst({
-        where: {
-          email: email,
-          resetToken: code,
-          resetExpires: { gt: new Date() },
-        },
+        where: { email, resetToken: code, resetExpires: { gt: new Date() } },
         select: { id: true, email: true, fullName: true },
       });
-
-      if (!landlord) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid or expired reset code",
-        });
-      }
+      if (!landlord)
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid or expired reset code" });
 
       const passwordHash = await hashPassword(newPassword);
-
-      // 🚀 FIRE AND FORGET - Update password and send confirmation without waiting
-      Promise.all([
-        prisma.landlord.update({
-          where: { id: landlord.id },
-          data: {
-            passwordHash,
-            resetToken: null,
-            resetExpires: null,
-          },
-        }),
-        emailService
-          .sendPasswordChangedEmail(landlord.email, landlord.fullName)
-          .catch((error) =>
-            console.error("❌ Confirmation email failed:", error.message)
-          ),
-      ]).catch((error) => {
-        console.error("❌ Background update error:", error.message);
+      await prisma.landlord.update({
+        where: { id: landlord.id },
+        data: { passwordHash, resetToken: null, resetExpires: null },
       });
 
-      // ⚡ INSTANT RESPONSE
-      res.json({
-        success: true,
-        message: "Password reset successfully",
-      });
+      emailQueue.add(landlord.email, null, landlord.fullName, "changed");
+      console.log("🚀 Password changed confirmation email queued successfully");
+
+      res.json({ success: true, message: "Password reset successfully" });
     } catch (error) {
       console.error("Reset password error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Error resetting password",
-        error:
-          process.env.NODE_ENV === "development" ? error.message : undefined,
-      });
+      res
+        .status(500)
+        .json({
+          success: false,
+          message: "Error resetting password",
+          error:
+            process.env.NODE_ENV === "development" ? error.message : undefined,
+        });
     }
   },
 
-  // ✅ Admin Login - OPTIMIZED
+  // ✅ Admin Login
   loginAdmin: async (req, res) => {
     try {
       const { email, password } = req.body;
-
-      if (!email || !password) {
-        return res.status(400).json({
-          success: false,
-          message: "Email and password are required",
-        });
-      }
+      if (!email || !password)
+        return res
+          .status(400)
+          .json({ success: false, message: "Email and password are required" });
 
       const admin = await prisma.admin.findUnique({
         where: { email },
         select: { id: true, username: true, email: true, passwordHash: true },
       });
-
-      if (!admin || !(await comparePassword(password, admin.passwordHash))) {
-        return res.status(401).json({
-          success: false,
-          message: "Invalid email or password",
-        });
-      }
+      if (!admin || !(await comparePassword(password, admin.passwordHash)))
+        return res
+          .status(401)
+          .json({ success: false, message: "Invalid email or password" });
 
       const token = generateToken(admin.id, "admin");
-
-      // Remove passwordHash from response
       const { passwordHash, ...adminData } = admin;
 
       res.json({
         success: true,
         message: "Admin login successful",
-        data: {
-          admin: adminData,
-          token,
-        },
+        data: { admin: adminData, token },
       });
     } catch (error) {
       console.error("Admin login error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Error during admin login",
-        error:
-          process.env.NODE_ENV === "development" ? error.message : undefined,
-      });
+      res
+        .status(500)
+        .json({
+          success: false,
+          message: "Error during admin login",
+          error:
+            process.env.NODE_ENV === "development" ? error.message : undefined,
+        });
     }
   },
 };
